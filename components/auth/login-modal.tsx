@@ -1,177 +1,222 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import * as React from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { MessageCircle, Loader2 } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
+import { useAuthStore } from "@/lib/auth-store"
 import { useToast } from "@/hooks/use-toast"
 
 interface LoginModalProps {
   isOpen: boolean
   onClose: () => void
-  onLogin: (user: any) => void
 }
 
-export function LoginModal({ isOpen, onClose, onLogin }: LoginModalProps) {
-  const [isLoading, setIsLoading] = useState(false)
-  const [isPolling, setIsPolling] = useState(false)
-  const [currentToken, setCurrentToken] = useState<string | null>(null)
+export function LoginModal({ isOpen, onClose }: LoginModalProps) {
+  const [isLoading, setIsLoading] = React.useState(false)
+  const [phone, setPhone] = React.useState("")
+  const [firstName, setFirstName] = React.useState("")
+  const [lastName, setLastName] = React.useState("")
+  const { setUser } = useAuthStore()
   const { toast } = useToast()
 
-  useEffect(() => {
-    let pollInterval: NodeJS.Timeout
+  const handleTelegramLogin = async () => {
+    try {
+      setIsLoading(true)
 
-    if (isPolling && currentToken) {
-      pollInterval = setInterval(async () => {
-        try {
+      // Check if Telegram WebApp is available
+      if (typeof window !== "undefined" && (window as any).Telegram?.WebApp) {
+        const tg = (window as any).Telegram.WebApp
+        const user = tg.initDataUnsafe?.user
+
+        if (user) {
           const response = await fetch("/api/auth/telegram-verify", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ token: currentToken }),
+            body: JSON.stringify({
+              telegram_id: user.id,
+              username: user.username,
+              first_name: user.first_name,
+              last_name: user.last_name,
+            }),
           })
+
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`Server error: ${response.status}`)
+          }
 
           const data = await response.json()
 
           if (data.success && data.user) {
-            // Login successful
-            localStorage.setItem("telegram_id", data.user.telegram_id.toString())
-            onLogin(data.user)
-            setIsPolling(false)
-            setCurrentToken(null)
+            setUser(data.user)
+            toast({
+              title: "Muvaffaqiyatli kirish",
+              description: "Telegram orqali muvaffaqiyatli kirdingiz",
+            })
             onClose()
-
-            toast({
-              title: "Muvaffaqiyat",
-              description: "Tizimga muvaffaqiyatli kirdingiz",
-            })
-          } else if (response.status === 400) {
-            // Token expired or invalid
-            setIsPolling(false)
-            setCurrentToken(null)
-            setIsLoading(false)
-
-            toast({
-              title: "Xatolik",
-              description: "Vaqt tugadi. Qaytadan urinib ko'ring",
-              variant: "destructive",
-            })
+          } else {
+            throw new Error(data.message || "Login failed")
           }
-        } catch (error) {
-          console.error("Polling error:", error)
+        } else {
+          throw new Error("Telegram user data not found")
         }
-      }, 3000) // Poll every 3 seconds
-    }
-
-    return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval)
+      } else {
+        // Fallback for testing without Telegram
+        const mockUser = {
+          id: "test-user-1",
+          telegram_id: 123456789,
+          first_name: "Test",
+          last_name: "User",
+          phone: "+998901234567",
+          role: "client" as const,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+        setUser(mockUser)
+        toast({
+          title: "Test rejimida kirish",
+          description: "Test foydalanuvchi sifatida kirdingiz",
+        })
+        onClose()
       }
-    }
-  }, [isPolling, currentToken, onLogin, onClose, toast])
-
-  const handleTelegramLogin = async () => {
-    setIsLoading(true)
-
-    try {
-      // Generate client ID
-      const clientId = `web_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-
-      // Initialize Telegram OAuth
-      const response = await fetch("/api/auth/telegram-init", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ client_id: clientId }),
-      })
-
-      const data = await response.json()
-
-      if (!data.success) {
-        throw new Error(data.error || "Token yaratishda xatolik")
-      }
-
-      // Open Telegram bot
-      window.open(data.telegram_url, "_blank")
-
-      // Start polling for authentication
-      setCurrentToken(data.token)
-      setIsPolling(true)
-
-      toast({
-        title: "Telegram botga o'ting",
-        description: "Botda /start buyrug'ini bosing va ko'rsatmalarga amal qiling",
-      })
     } catch (error) {
       console.error("Telegram login error:", error)
-      setIsLoading(false)
-
       toast({
         title: "Xatolik",
-        description: "Telegram orqali kirishda xatolik",
+        description: error instanceof Error ? error.message : "Telegram orqali kirishda xatolik yuz berdi",
         variant: "destructive",
       })
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const handleCancel = () => {
-    setIsPolling(false)
-    setCurrentToken(null)
-    setIsLoading(false)
-    onClose()
+  const handlePhoneLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!phone || !firstName) {
+      toast({
+        title: "Xatolik",
+        description: "Telefon raqam va ismni kiriting",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setIsLoading(true)
+
+      // Mock phone login for now
+      const mockUser = {
+        id: "phone-user-1",
+        first_name: firstName,
+        last_name: lastName,
+        phone: phone,
+        role: "client" as const,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+
+      setUser(mockUser)
+      toast({
+        title: "Muvaffaqiyatli kirish",
+        description: "Telefon raqam orqali muvaffaqiyatli kirdingiz",
+      })
+      onClose()
+    } catch (error) {
+      console.error("Phone login error:", error)
+      toast({
+        title: "Xatolik",
+        description: "Telefon orqali kirishda xatolik yuz berdi",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleCancel}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-center">Tizimga kirish</DialogTitle>
+          <DialogTitle className="text-center">MetalBaza'ga kirish</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          <div className="text-center">
-            <p className="text-gray-600">MetalBaza tizimiga kirish uchun Telegram akkauntingizdan foydalaning</p>
-          </div>
-
-          {!isPolling ? (
+        <div className="space-y-6">
+          {/* Telegram Login */}
+          <div className="space-y-4">
             <Button
               onClick={handleTelegramLogin}
               disabled={isLoading}
-              className="w-full flex items-center justify-center space-x-3 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl"
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white"
             >
-              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <MessageCircle className="w-5 h-5" />}
-              <span>Telegram orqali kirish</span>
+              {isLoading ? "Kuting..." : "Telegram orqali kirish"}
             </Button>
-          ) : (
-            <div className="text-center space-y-4">
-              <div className="flex items-center justify-center space-x-2">
-                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-                <span className="text-blue-600">Telegram orqali autentifikatsiya kutilmoqda...</span>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-800">
-                  1. Telegram botga o'ting
-                  <br />
-                  2. /start buyrug'ini bosing
-                  <br />
-                  3. Ko'rsatmalarga amal qiling
-                  <br />
-                  4. Bu oyna avtomatik ravishda yopiladi
-                </p>
-              </div>
-
-              <Button variant="outline" onClick={handleCancel} className="w-full bg-transparent">
-                Bekor qilish
-              </Button>
-            </div>
-          )}
-
-          <div className="text-center">
-            <p className="text-sm text-gray-500">Telegram botimiz orqali xavfsiz va tez kirish</p>
+            <p className="text-xs text-gray-500 text-center">Telegram orqali tez va xavfsiz kirish</p>
           </div>
+
+          <Separator />
+
+          {/* Phone Login */}
+          <form onSubmit={handlePhoneLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="phone">Telefon raqam</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="+998 90 123 45 67"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">Ism</Label>
+                <Input
+                  id="firstName"
+                  type="text"
+                  placeholder="Ismingiz"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Familiya</Label>
+                <Input
+                  id="lastName"
+                  type="text"
+                  placeholder="Familiyangiz"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <Button type="submit" disabled={isLoading} className="w-full bg-transparent" variant="outline">
+              {isLoading ? "Kuting..." : "Telefon orqali kirish"}
+            </Button>
+          </form>
+
+          <p className="text-xs text-gray-500 text-center">
+            Kirishingiz bilan siz{" "}
+            <a href="#" className="text-blue-600 hover:underline">
+              Foydalanish shartlari
+            </a>{" "}
+            va{" "}
+            <a href="#" className="text-blue-600 hover:underline">
+              Maxfiylik siyosati
+            </a>
+            ga rozilik bildirasiz
+          </p>
         </div>
       </DialogContent>
     </Dialog>
