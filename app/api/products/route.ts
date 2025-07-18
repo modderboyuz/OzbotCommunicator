@@ -14,17 +14,19 @@ export async function GET(request: NextRequest) {
     }
 
     if (search) {
-      query = query.or(`name_uz.ilike.%${search}%,description_uz.ilike.%${search}%`)
+      query = query.or(`name_uz.ilike.%${search}%,name_ru.ilike.%${search}%,description_uz.ilike.%${search}%`)
     }
 
     const { data, error } = await query.order("created_at", { ascending: false })
 
     if (error) {
+      console.error("Products fetch error:", error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json(data)
+    return NextResponse.json(data || [])
   } catch (error) {
+    console.error("Products API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

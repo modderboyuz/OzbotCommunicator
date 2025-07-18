@@ -15,6 +15,7 @@ export interface User {
   phone?: string
   role: "client" | "worker" | "admin"
   is_active: boolean
+  profile_image?: string
   created_at: string
   updated_at: string
 }
@@ -23,6 +24,8 @@ export interface Category {
   id: string
   name_uz: string
   name_ru: string
+  description_uz?: string
+  description_ru?: string
   icon_name?: string
   color?: string
   parent_id?: string

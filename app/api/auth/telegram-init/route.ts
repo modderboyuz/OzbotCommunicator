@@ -3,32 +3,38 @@ import { supabase } from "@/lib/supabase"
 
 export async function POST(request: NextRequest) {
   try {
-    const { telegram_id } = await request.json()
+    const { client_id } = await request.json()
 
-    if (!telegram_id) {
-      return NextResponse.json({ error: "Telegram ID required" }, { status: 400 })
+    if (!client_id) {
+      return NextResponse.json({ success: false, error: "Client ID is required" }, { status: 400 })
     }
 
-    // Check if user exists
-    const { data: user, error } = await supabase.from("users").select("*").eq("telegram_id", telegram_id).single()
+    // Generate a unique token
+    const token = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
-    if (error && error.code !== "PGRST116") {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    // Store token in database
+    const { error } = await supabase.from("temp_login_tokens").insert({
+      token,
+      client_id,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes
+    })
+
+    if (error) {
+      console.error("Database error:", error)
+      return NextResponse.json({ success: false, error: "Failed to create token" }, { status: 500 })
     }
 
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
-    }
-
-    // Generate a simple token (in production, use JWT)
-    const token = `tg_${telegram_id}_${Date.now()}`
+    // Create Telegram bot URL
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME || "MetalBazaBot"
+    const telegramUrl = `https://t.me/${botUsername}?start=${token}`
 
     return NextResponse.json({
-      user,
+      success: true,
       token,
-      expires_at: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+      telegram_url: telegramUrl,
     })
   } catch (error) {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Telegram init error:", error)
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
   }
 }

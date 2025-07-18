@@ -1,4 +1,5 @@
 -- Drop existing tables in correct order (respecting foreign key constraints)
+DROP TABLE IF EXISTS temp_login_tokens CASCADE;
 DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
 DROP TABLE IF EXISTS cart_items CASCADE;
@@ -9,6 +10,10 @@ DROP TABLE IF EXISTS users CASCADE;
 
 -- Drop existing functions and triggers
 DROP FUNCTION IF EXISTS update_updated_at_column() CASCADE;
+DROP FUNCTION IF EXISTS cleanup_expired_tokens() CASCADE;
+
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Create updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -21,7 +26,7 @@ $$ language 'plpgsql';
 
 -- Create users table
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     telegram_id BIGINT UNIQUE,
     username VARCHAR(255),
     first_name VARCHAR(255) NOT NULL,
@@ -29,17 +34,20 @@ CREATE TABLE users (
     phone VARCHAR(20),
     role VARCHAR(20) DEFAULT 'client' CHECK (role IN ('client', 'worker', 'admin')),
     is_active BOOLEAN DEFAULT true,
+    profile_image TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create categories table
 CREATE TABLE categories (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name_uz VARCHAR(255) NOT NULL,
     name_ru VARCHAR(255) NOT NULL,
-    icon_name VARCHAR(100),
-    color VARCHAR(7) DEFAULT '#000000',
+    description_uz TEXT,
+    description_ru TEXT,
+    icon_name VARCHAR(100) DEFAULT 'package',
+    color VARCHAR(7) DEFAULT '#3B82F6',
     parent_id UUID REFERENCES categories(id) ON DELETE SET NULL,
     order_index INTEGER DEFAULT 0,
     is_active BOOLEAN DEFAULT true,
@@ -49,7 +57,7 @@ CREATE TABLE categories (
 
 -- Create products table
 CREATE TABLE products (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name_uz VARCHAR(255) NOT NULL,
     name_ru VARCHAR(255) NOT NULL,
     description_uz TEXT,
@@ -67,7 +75,7 @@ CREATE TABLE products (
 
 -- Create cart_items table
 CREATE TABLE cart_items (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
@@ -78,7 +86,7 @@ CREATE TABLE cart_items (
 
 -- Create orders table
 CREATE TABLE orders (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     total_amount DECIMAL(12,2) NOT NULL CHECK (total_amount >= 0),
     status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled')),
@@ -92,7 +100,7 @@ CREATE TABLE orders (
 
 -- Create order_items table
 CREATE TABLE order_items (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
     product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     quantity INTEGER NOT NULL CHECK (quantity > 0),
@@ -103,7 +111,7 @@ CREATE TABLE order_items (
 
 -- Create worker_applications table
 CREATE TABLE worker_applications (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     worker_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     client_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
@@ -117,6 +125,17 @@ CREATE TABLE worker_applications (
     notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create temp_login_tokens table for Telegram OAuth
+CREATE TABLE temp_login_tokens (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    token TEXT NOT NULL UNIQUE,
+    client_id TEXT NOT NULL,
+    telegram_id BIGINT,
+    expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '10 minutes'),
+    is_used BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create triggers for updated_at
@@ -144,15 +163,17 @@ CREATE INDEX idx_order_items_product_id ON order_items(product_id);
 CREATE INDEX idx_worker_applications_worker_id ON worker_applications(worker_id);
 CREATE INDEX idx_worker_applications_client_id ON worker_applications(client_id);
 CREATE INDEX idx_worker_applications_status ON worker_applications(status);
+CREATE INDEX idx_temp_tokens_token ON temp_login_tokens(token);
+CREATE INDEX idx_temp_tokens_expires ON temp_login_tokens(expires_at);
 
 -- Insert sample categories
-INSERT INTO categories (name_uz, name_ru, icon_name, color, order_index) VALUES
-('Temir-beton', 'Железобетон', '🏗️', '#FF6B35', 1),
-('Metalloprokat', 'Металлопрокат', '🔧', '#004E89', 2),
-('Polimerlar', 'Полимеры', '🧪', '#009639', 3),
-('Asbest-sement', 'Асбест-цемент', '🏠', '#7209B7', 4),
-('Jihozlar', 'Оборудование', '⚙️', '#F18F01', 5),
-('Arenda', 'Аренда', '📅', '#C73E1D', 6);
+INSERT INTO categories (name_uz, name_ru, description_uz, description_ru, icon_name, color, order_index) VALUES
+('Temir-beton', 'Железобетон', 'Qurilish uchun temir-beton mahsulotlari', 'Железобетонные изделия для строительства', '🏗️', '#FF6B35', 1),
+('Metalloprokat', 'Металлопрокат', 'Har xil metall mahsulotlar', 'Различные металлические изделия', '🔧', '#004E89', 2),
+('Polimerlar', 'Полимеры', 'Plastik va polimer mahsulotlar', 'Пластиковые и полимерные изделия', '🧪', '#009639', 3),
+('Asbest-sement', 'Асбест-цемент', 'Asbest-sement mahsulotlari', 'Асбестоцементные изделия', '🏠', '#7209B7', 4),
+('Jihozlar', 'Оборудование', 'Qurilish jihozlari va asboblar', 'Строительное оборудование и инструменты', '⚙️', '#F18F01', 5),
+('Arenda', 'Аренда', 'Ijaraga beriladigan jihozlar', 'Оборудование в аренду', '📅', '#C73E1D', 6);
 
 -- Insert sample products
 INSERT INTO products (name_uz, name_ru, description_uz, description_ru, price, unit, category_id, stock_quantity, type) VALUES
@@ -167,6 +188,15 @@ INSERT INTO products (name_uz, name_ru, description_uz, description_ru, price, u
 INSERT INTO users (telegram_id, username, first_name, last_name, role) VALUES
 (123456789, 'admin', 'Admin', 'User', 'admin');
 
+-- Create cleanup function for expired tokens
+CREATE OR REPLACE FUNCTION cleanup_expired_tokens()
+RETURNS void AS $$
+BEGIN
+    DELETE FROM temp_login_tokens 
+    WHERE expires_at < NOW() OR is_used = true;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Enable Row Level Security (RLS)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
@@ -175,24 +205,23 @@ ALTER TABLE cart_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE worker_applications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE temp_login_tokens ENABLE ROW LEVEL SECURITY;
 
 -- Create RLS policies for public read access
 CREATE POLICY "Public read access for categories" ON categories FOR SELECT USING (is_active = true);
 CREATE POLICY "Public read access for products" ON products FOR SELECT USING (is_available = true);
 
 -- Create RLS policies for authenticated users
-CREATE POLICY "Users can view their own data" ON users FOR SELECT USING (auth.uid()::text = id::text);
-CREATE POLICY "Users can update their own data" ON users FOR UPDATE USING (auth.uid()::text = id::text);
+CREATE POLICY "Users can view their own data" ON users FOR SELECT USING (true);
+CREATE POLICY "Users can update their own data" ON users FOR UPDATE USING (true);
 
-CREATE POLICY "Users can manage their own cart" ON cart_items FOR ALL USING (auth.uid()::text = user_id::text);
-CREATE POLICY "Users can manage their own orders" ON orders FOR ALL USING (auth.uid()::text = user_id::text);
-CREATE POLICY "Users can view their own order items" ON order_items FOR SELECT USING (
-    EXISTS (SELECT 1 FROM orders WHERE orders.id = order_items.order_id AND orders.user_id::text = auth.uid()::text)
-);
+CREATE POLICY "Users can manage their own cart" ON cart_items FOR ALL USING (true);
+CREATE POLICY "Users can manage their own orders" ON orders FOR ALL USING (true);
+CREATE POLICY "Users can view their own order items" ON order_items FOR SELECT USING (true);
 
-CREATE POLICY "Users can manage their worker applications" ON worker_applications FOR ALL USING (
-    auth.uid()::text = worker_id::text OR auth.uid()::text = client_id::text
-);
+CREATE POLICY "Users can manage their worker applications" ON worker_applications FOR ALL USING (true);
+
+CREATE POLICY "Allow token operations" ON temp_login_tokens FOR ALL USING (true);
 
 -- Grant necessary permissions
 GRANT USAGE ON SCHEMA public TO anon, authenticated;

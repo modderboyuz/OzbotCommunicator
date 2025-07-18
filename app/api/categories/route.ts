@@ -6,11 +6,13 @@ export async function GET() {
     const { data, error } = await supabase.from("categories").select("*").eq("is_active", true).order("order_index")
 
     if (error) {
+      console.error("Categories fetch error:", error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json(data)
+    return NextResponse.json(data || [])
   } catch (error) {
+    console.error("Categories API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

@@ -5,33 +5,48 @@ export async function POST(request: NextRequest) {
   try {
     const { token } = await request.json()
 
-    if (!token || !token.startsWith("tg_")) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 400 })
+    if (!token) {
+      return NextResponse.json({ success: false, error: "Token is required" }, { status: 400 })
     }
 
-    // Extract telegram_id from token
-    const parts = token.split("_")
-    if (parts.length !== 3) {
-      return NextResponse.json({ error: "Invalid token format" }, { status: 400 })
+    // Check token in database
+    const { data: tokenData, error: tokenError } = await supabase
+      .from("temp_login_tokens")
+      .select("*")
+      .eq("token", token)
+      .eq("is_used", false)
+      .gt("expires_at", new Date().toISOString())
+      .single()
+
+    if (tokenError || !tokenData) {
+      return NextResponse.json({ success: false, error: "Invalid or expired token" }, { status: 400 })
     }
 
-    const telegram_id = Number.parseInt(parts[1])
-    const timestamp = Number.parseInt(parts[2])
-
-    // Check if token is expired (10 minutes)
-    if (Date.now() - timestamp > 10 * 60 * 1000) {
-      return NextResponse.json({ error: "Token expired" }, { status: 401 })
+    // If no telegram_id yet, return waiting status
+    if (!tokenData.telegram_id) {
+      return NextResponse.json({ success: false, waiting: true })
     }
 
-    // Get user
-    const { data: user, error } = await supabase.from("users").select("*").eq("telegram_id", telegram_id).single()
+    // Get user data
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("telegram_id", tokenData.telegram_id)
+      .single()
 
-    if (error) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    if (userError || !userData) {
+      return NextResponse.json({ success: false, error: "User not found" }, { status: 404 })
     }
 
-    return NextResponse.json({ user })
+    // Mark token as used
+    await supabase.from("temp_login_tokens").update({ is_used: true }).eq("token", token)
+
+    return NextResponse.json({
+      success: true,
+      user: userData,
+    })
   } catch (error) {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Telegram verify error:", error)
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
   }
 }

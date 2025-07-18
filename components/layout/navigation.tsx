@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Menu, User, ShoppingCart } from "lucide-react"
+import { Search, User, ShoppingCart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LoginModal } from "@/components/auth/login-modal"
@@ -125,11 +125,6 @@ export function Navigation({ searchQuery = "", onSearchChange }: NavigationProps
                   Kirish
                 </Button>
               )}
-
-              {/* Mobile menu button */}
-              <Button variant="ghost" size="sm" className="md:hidden p-2">
-                <Menu className="h-5 w-5" />
-              </Button>
             </div>
           </div>
         </div>
