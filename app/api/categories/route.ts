@@ -3,13 +3,9 @@ import { createServerSupabaseClient } from "@/lib/supabase"
 
 export async function GET() {
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
 
-    const { data: categories, error } = await supabase
-      .from("categories")
-      .select("*")
-      .eq("is_active", true)
-      .order("order_index", { ascending: true })
+    const { data: categories, error } = await supabase.from("categories").select("*").order("name")
 
     if (error) {
       console.error("Categories fetch error:", error)

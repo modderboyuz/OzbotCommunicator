@@ -10,7 +10,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "User ID is required" }, { status: 400 })
     }
 
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
 
     const { data: orders, error } = await supabase
       .from("orders")
@@ -20,8 +20,8 @@ export async function GET(request: Request) {
           *,
           products (
             id,
-            name_uz,
-            name_ru,
+            name,
+            price,
             image_url
           )
         )
@@ -44,13 +44,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { userId, items, totalAmount, deliveryAddress, phone, customerName, notes } = body
+    const { userId, items, totalAmount, shippingAddress, paymentMethod } = body
 
-    if (!userId || !items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ error: "Invalid order data" }, { status: 400 })
+    if (!userId || !items || !totalAmount) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
 
     // Create order
     const { data: order, error: orderError } = await supabase
@@ -59,10 +59,8 @@ export async function POST(request: Request) {
         user_id: userId,
         total_amount: totalAmount,
         status: "pending",
-        delivery_address: deliveryAddress,
-        phone: phone,
-        customer_name: customerName,
-        notes: notes,
+        shipping_address: shippingAddress,
+        payment_method: paymentMethod,
       })
       .select()
       .single()
@@ -78,7 +76,6 @@ export async function POST(request: Request) {
       product_id: item.product_id,
       quantity: item.quantity,
       price: item.price,
-      product_name: item.product_name,
     }))
 
     const { error: itemsError } = await supabase.from("order_items").insert(orderItems)
@@ -87,9 +84,6 @@ export async function POST(request: Request) {
       console.error("Order items creation error:", itemsError)
       return NextResponse.json({ error: itemsError.message }, { status: 500 })
     }
-
-    // Clear cart
-    await supabase.from("cart_items").delete().eq("user_id", userId)
 
     return NextResponse.json({ success: true, orderId: order.id })
   } catch (error) {

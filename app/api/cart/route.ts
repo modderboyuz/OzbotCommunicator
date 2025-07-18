@@ -1,7 +1,7 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get("userId")
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User ID is required" }, { status: 400 })
     }
 
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
 
     const { data: cartItems, error } = await supabase
       .from("cart_items")
@@ -18,16 +18,13 @@ export async function GET(request: NextRequest) {
         *,
         products (
           id,
-          name_uz,
-          name_ru,
+          name,
           price,
           image_url,
-          unit,
-          stock_quantity
+          is_active
         )
       `)
       .eq("user_id", userId)
-      .order("created_at", { ascending: false })
 
     if (error) {
       console.error("Cart fetch error:", error)
@@ -41,7 +38,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const body = await request.json()
     const { userId, productId, quantity } = body
@@ -50,7 +47,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
 
     // Check if item already exists in cart
     const { data: existingItem } = await supabase
@@ -62,88 +59,66 @@ export async function POST(request: NextRequest) {
 
     if (existingItem) {
       // Update quantity
-      const { error } = await supabase
+      const { data: updatedItem, error } = await supabase
         .from("cart_items")
         .update({ quantity: existingItem.quantity + quantity })
         .eq("id", existingItem.id)
+        .select()
+        .single()
 
       if (error) {
+        console.error("Cart update error:", error)
         return NextResponse.json({ error: error.message }, { status: 500 })
       }
+
+      return NextResponse.json(updatedItem)
     } else {
-      // Add new item
-      const { error } = await supabase.from("cart_items").insert({
-        user_id: userId,
-        product_id: productId,
-        quantity,
-      })
+      // Create new cart item
+      const { data: newItem, error } = await supabase
+        .from("cart_items")
+        .insert({
+          user_id: userId,
+          product_id: productId,
+          quantity,
+        })
+        .select()
+        .single()
 
       if (error) {
+        console.error("Cart creation error:", error)
         return NextResponse.json({ error: error.message }, { status: 500 })
       }
-    }
 
-    return NextResponse.json({ success: true })
+      return NextResponse.json(newItem)
+    }
   } catch (error) {
-    console.error("Add to cart API error:", error)
+    console.error("Cart API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
-export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { cartItemId, quantity } = body
-
-    if (!cartItemId || quantity === undefined) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
-    }
-
-    const supabase = createServerSupabaseClient()
-
-    if (quantity <= 0) {
-      // Remove item
-      const { error } = await supabase.from("cart_items").delete().eq("id", cartItemId)
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 })
-      }
-    } else {
-      // Update quantity
-      const { error } = await supabase.from("cart_items").update({ quantity }).eq("id", cartItemId)
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 })
-      }
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error("Update cart API error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
-}
-
-export async function DELETE(request: NextRequest) {
+export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const cartItemId = searchParams.get("cartItemId")
+    const userId = searchParams.get("userId")
+    const productId = searchParams.get("productId")
 
-    if (!cartItemId) {
-      return NextResponse.json({ error: "Cart item ID is required" }, { status: 400 })
+    if (!userId || !productId) {
+      return NextResponse.json({ error: "User ID and Product ID are required" }, { status: 400 })
     }
 
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
 
-    const { error } = await supabase.from("cart_items").delete().eq("id", cartItemId)
+    const { error } = await supabase.from("cart_items").delete().eq("user_id", userId).eq("product_id", productId)
 
     if (error) {
+      console.error("Cart deletion error:", error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Remove from cart API error:", error)
+    console.error("Cart deletion API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

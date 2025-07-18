@@ -4,10 +4,10 @@ import { createServerSupabaseClient } from "@/lib/supabase"
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const categoryId = searchParams.get("category")
+    const category = searchParams.get("category")
     const search = searchParams.get("search")
 
-    const supabase = createServerSupabaseClient()
+    const supabase = await createServerSupabaseClient()
 
     let query = supabase
       .from("products")
@@ -15,20 +15,17 @@ export async function GET(request: Request) {
         *,
         categories (
           id,
-          name_uz,
-          name_ru
+          name
         )
       `)
-      .eq("is_available", true)
+      .eq("is_active", true)
 
-    if (categoryId) {
-      query = query.eq("category_id", categoryId)
+    if (category && category !== "all") {
+      query = query.eq("category_id", category)
     }
 
     if (search) {
-      query = query.or(
-        `name_uz.ilike.%${search}%,name_ru.ilike.%${search}%,description_uz.ilike.%${search}%,description_ru.ilike.%${search}%`,
-      )
+      query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%`)
     }
 
     const { data: products, error } = await query.order("created_at", { ascending: false })
