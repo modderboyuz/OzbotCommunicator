@@ -22,6 +22,7 @@ export function LoginModal({ isOpen, onClose, onLogin }: LoginModalProps) {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     setLoginStep('initial');
     
     try {
@@ -57,6 +58,8 @@ export function LoginModal({ isOpen, onClose, onLogin }: LoginModalProps) {
 >>>>>>> parent of d5f8a26 (Saved your changes before starting work)
 =======
 >>>>>>> parent of d5f8a26 (Saved your changes before starting work)
+=======
+>>>>>>> parent of d5f8a26 (Saved your changes before starting work)
     
     try {
       // In a real implementation, this would redirect to Telegram bot
@@ -79,6 +82,9 @@ export function LoginModal({ isOpen, onClose, onLogin }: LoginModalProps) {
       console.error('Telegram login error:', error);
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+>>>>>>> parent of d5f8a26 (Saved your changes before starting work)
+=======
 >>>>>>> parent of d5f8a26 (Saved your changes before starting work)
 =======
 >>>>>>> parent of d5f8a26 (Saved your changes before starting work)
