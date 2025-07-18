@@ -14,21 +14,21 @@ MetalBaza - bu qurilish materiallari va jihozlarini sotish uchun mo'ljallangan z
 ## O'rnatish
 
 1. **Loyihani klonlash**:
-```bash
+\`\`\`bash
 git clone <repository-url>
 cd metalbaza
-```
+\`\`\`
 
 2. **Dependencies o'rnatish**:
-```bash
+\`\`\`bash
 npm install
-```
+\`\`\`
 
 3. **Environment variables sozlash**:
 `.env.example` faylini `.env` ga nusxalang va kerakli qiymatlarni kiriting:
-```bash
+\`\`\`bash
 cp .env.example .env
-```
+\`\`\`
 
 4. **Supabase loyihasi yaratish**:
 - [Supabase](https://supabase.com) da yangi loyiha yarating
@@ -38,13 +38,13 @@ cp .env.example .env
 Supabase SQL Editor da `supabase/migrations/create_complete_schema.sql` faylini ishga tushiring.
 
 6. **Loyihani ishga tushirish**:
-```bash
+\`\`\`bash
 npm run dev
-```
+\`\`\`
 
 ## Loyiha tuzilishi
 
-```
+\`\`\`
 metalbaza/
 ├── client/
 │   ├── src/
@@ -58,7 +58,7 @@ metalbaza/
 │   └── migrations/         # Database migration fayllari
 ├── package.json
 └── README.md
-```
+\`\`\`
 
 ## Asosiy funksiyalar
 
@@ -95,9 +95,9 @@ metalbaza/
 ## Deployment
 
 1. **Build yaratish**:
-```bash
+\`\`\`bash
 npm run build
-```
+\`\`\`
 
 2. **Supabase da hosting**:
 - Supabase loyihasida hosting yoqing

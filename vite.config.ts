@@ -1,1 +1,17 @@
-{"code":"rate-limited","message":"You have hit the rate limit. Please upgrade to keep chatting.","providerLimitHit":false,"isRetryable":true}
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react"
+import path from "path"
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./client/src"),
+    },
+  },
+  server: {
+    port: 5173,
+    host: true,
+  },
+})
