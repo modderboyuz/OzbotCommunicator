@@ -1,22 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { ShoppingCart, X } from "lucide-react"
+import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { ShoppingCart } from "lucide-react"
 import { useAuthStore } from "@/lib/auth-store"
-import { supabase } from "@/lib/supabase"
-
-interface CartItem {
-  id: string
-  quantity: number
-  product: {
-    id: string
-    name_uz: string
-    price: number
-    unit: string
-  }
-}
 
 interface CartBarProps {
   onOrderClick?: () => void
@@ -24,100 +12,71 @@ interface CartBarProps {
 
 export function CartBar({ onOrderClick }: CartBarProps) {
   const { user } = useAuthStore()
-  const [cartItems, setCartItems] = useState<CartItem[]>([])
-  const [isVisible, setIsVisible] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [cartItems, setCartItems] = React.useState<any[]>([])
+  const [isLoading, setIsLoading] = React.useState(false)
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (user) {
+      // Load cart items
       loadCartItems()
     }
   }, [user])
 
   const loadCartItems = async () => {
-    if (!user) return
-
+    setIsLoading(true)
     try {
-      setLoading(true)
-      const { data, error } = await supabase
-        .from("cart_items")
-        .select(`
-          id,
-          quantity,
-          product:products(
-            id,
-            name_uz,
-            price,
-            unit
-          )
-        `)
-        .eq("user_id", user.id)
-
-      if (error) throw error
-
-      setCartItems(data || [])
-      setIsVisible((data || []).length > 0)
+      // Simulate loading cart items
+      setCartItems([])
     } catch (error) {
-      console.error("Error loading cart items:", error)
+      console.error("Error loading cart:", error)
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
-  const getTotalAmount = () => {
+  const formatPrice = (price: string) => {
+    return new Intl.NumberFormat("uz-UZ").format(Number(price)) + " so'm"
+  }
+
+  const getTotalCartAmount = () => {
+    if (!cartItems) return 0
     return cartItems.reduce((total, item) => {
-      return total + item.product.price * item.quantity
+      return total + Number(item.product?.price || 0) * item.quantity
     }, 0)
   }
 
-  const getTotalItems = () => {
+  const getTotalItemCount = () => {
+    if (!cartItems) return 0
     return cartItems.reduce((total, item) => total + item.quantity, 0)
   }
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat("uz-UZ").format(price) + " so'm"
-  }
-
-  if (!user || !isVisible || cartItems.length === 0) {
+  // Don't show if user is not logged in or cart is empty
+  if (!user || !cartItems || cartItems.length === 0 || isLoading) {
     return null
   }
 
   return (
-    <div className="fixed bottom-20 left-4 right-4 z-40 md:bottom-4">
-      <div className="bg-primary text-primary-foreground rounded-lg shadow-lg p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="relative">
-              <ShoppingCart className="h-6 w-6" />
-              <Badge className="absolute -right-2 -top-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center bg-background text-foreground">
-                {getTotalItems()}
-              </Badge>
-            </div>
-            <div>
-              <p className="font-medium">{getTotalItems()} ta mahsulot</p>
-              <p className="text-sm opacity-90">{formatPrice(getTotalAmount())}</p>
-            </div>
+    <div className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-gray-200 px-4 py-3 shadow-lg md:bottom-0">
+      <div className="max-w-7xl mx-auto flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="relative">
+            <ShoppingCart className="h-6 w-6 text-gray-700" />
+            <Badge className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 bg-black text-white text-xs">
+              {getTotalItemCount()}
+            </Badge>
           </div>
-
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onOrderClick}
-              className="bg-background text-foreground hover:bg-background/90"
-            >
-              Buyurtma berish
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsVisible(false)}
-              className="text-primary-foreground hover:bg-primary-foreground/20"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+          <div>
+            <p className="text-sm text-gray-600">Jami summa</p>
+            <p className="font-bold text-lg text-black">{formatPrice(getTotalCartAmount().toString())}</p>
           </div>
         </div>
+
+        <Button
+          onClick={onOrderClick}
+          className="bg-black text-white hover:bg-gray-800 px-6 py-2 rounded-lg font-medium"
+        >
+          Buyurtma berish
+        </Button>
       </div>
     </div>
   )

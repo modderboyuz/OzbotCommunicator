@@ -1,67 +1,49 @@
 import { create } from "zustand"
-import { supabase } from "./supabase"
+import { persist } from "zustand/middleware"
 
 interface User {
   id: string
-  phone: string
-  first_name: string
-  last_name: string
-  telegram_username?: string
   telegram_id?: number
+  username?: string
+  first_name: string
+  last_name?: string
+  phone?: string
   role: "client" | "worker" | "admin"
-  type: "telegram" | "google"
+  is_active: boolean
   created_at: string
   updated_at: string
 }
 
 interface AuthState {
   user: User | null
-  isLoading: boolean
-  setUser: (user: User | null) => void
-  setLoading: (loading: boolean) => void
-  loginWithTelegram: (telegramId: number) => Promise<boolean>
+  token: string | null
+  isAuthenticated: boolean
+  login: (user: User, token: string) => void
   logout: () => void
-  getCurrentUser: () => Promise<User | null>
+  updateUser: (user: Partial<User>) => void
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
-  user: null,
-  isLoading: false,
-
-  setUser: (user) => set({ user }),
-  setLoading: (isLoading) => set({ isLoading }),
-
-  loginWithTelegram: async (telegramId: number) => {
-    set({ isLoading: true })
-    try {
-      const { data, error } = await supabase.from("users").select("*").eq("telegram_id", telegramId).single()
-
-      if (error || !data) {
-        console.error("Telegram login error:", error)
-        set({ isLoading: false })
-        return false
-      }
-
-      localStorage.setItem("telegram_id", telegramId.toString())
-      set({ user: data, isLoading: false })
-      return true
-    } catch (error) {
-      console.error("Telegram login error:", error)
-      set({ isLoading: false })
-      return false
-    }
-  },
-
-  getCurrentUser: async () => {
-    const telegramId = localStorage.getItem("telegram_id")
-    if (!telegramId) return null
-
-    const success = await get().loginWithTelegram(Number(telegramId))
-    return success ? get().user : null
-  },
-
-  logout: () => {
-    localStorage.removeItem("telegram_id")
-    set({ user: null })
-  },
-}))
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set, get) => ({
+      user: null,
+      token: null,
+      isAuthenticated: false,
+      login: (user: User, token: string) => {
+        set({ user, token, isAuthenticated: true })
+      },
+      logout: () => {
+        set({ user: null, token: null, isAuthenticated: false })
+      },
+      updateUser: (userData: Partial<User>) => {
+        const currentUser = get().user
+        if (currentUser) {
+          set({ user: { ...currentUser, ...userData } })
+        }
+      },
+    }),
+    {
+      name: "auth-storage",
+    },
+  ),
+)
