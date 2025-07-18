@@ -91,7 +91,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const user = await storage.getUserByTelegramId(tempToken.telegram_id);
       if (!user) {
-        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+        // Create new user if not found
+        const newUser = await storage.createUser({
+          phone: `+${tempToken.telegram_id}`,
+          first_name: "Telegram",
+          last_name: "User",
+          telegram_id: tempToken.telegram_id,
+          role: "client",
+          type: "telegram"
+        });
+        
+        // Mark token as used
+        await storage.useTempToken(token);
+        
+        return res.json({ user: newUser });
       }
 
       // Mark token as used
@@ -123,7 +136,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Categories
   app.get("/api/categories", async (req, res) => {
     try {
-      const categories = await storage.getCategories();
+      const { parent_id } = req.query;
+      const categories = await storage.getCategoriesByParent(parent_id as string);
       res.json(categories);
     } catch (error) {
       res.status(500).json({ error: "Kategoriyalarni olishda xatolik" });

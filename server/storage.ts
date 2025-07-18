@@ -108,7 +108,20 @@ export class DrizzleStorage {
 
   // Categories
   async getCategories(): Promise<Category[]> {
-    return await db.select().from(categories).where(eq(categories.is_active, true)).orderBy(categories.order_index);
+    const result = await db.select().from(categories).where(eq(categories.is_active, true)).orderBy(categories.order_index);
+    return result;
+  }
+
+  async getCategoriesByParent(parentId?: string): Promise<Category[]> {
+    if (parentId) {
+      return await db.select().from(categories)
+        .where(and(eq(categories.parent_id, parentId), eq(categories.is_active, true)))
+        .orderBy(categories.order_index);
+    } else {
+      return await db.select().from(categories)
+        .where(and(isNull(categories.parent_id), eq(categories.is_active, true)))
+        .orderBy(categories.order_index);
+    }
   }
 
   async createCategory(category: InsertCategory): Promise<Category> {

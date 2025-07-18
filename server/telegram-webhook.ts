@@ -119,24 +119,43 @@ if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== "dummy_
             return;
           }
 
-          // Check if user exists
           const user = await storage.getUserByTelegramId(ctx.from?.id);
           if (!user) {
+            // Auto-register user
+            try {
+              const userData = {
+                phone: `+${ctx.from?.id}`,
+                first_name: ctx.from?.first_name || "Telegram",
+                last_name: ctx.from?.last_name || "User",
+                telegram_username: ctx.from?.username,
+                telegram_id: ctx.from?.id,
+                role: 'client' as const,
+                type: 'telegram' as const
+              };
+              
+              await storage.createUser(userData);
+              
+              await ctx.reply(
+                `✅ Avtomatik ro'yxatdan o'tdingiz va web saytga kirib oldingiz!\n\n` +
+                `👤 ${userData.first_name} ${userData.last_name}\n` +
+                `🌐 Endi web saytda foydalanishingiz mumkin.`
+              );
+            } catch (error) {
+              console.error('Auto-registration error:', error);
+              await ctx.reply("❌ Avtomatik ro'yxatdan o'tishda xatolik.");
+              return;
+            }
+          } else {
             await ctx.reply(
-              "❌ Siz hali ro'yxatdan o'tmagansiz.\n\n" +
-              "Iltimos, avval /register buyrug'ini ishlatib ro'yxatdan o'ting."
+              `✅ Web saytga kirish muvaffaqiyatli!\n\n` +
+              `👤 ${user.first_name} ${user.last_name}\n` +
+              `🌐 Endi web saytda avtomatik kirib olasiz.`
             );
-            return;
           }
 
           // Mark token as used
           await storage.useTempToken(token);
 
-          await ctx.reply(
-            `✅ Web saytga kirish muvaffaqiyatli!\n\n` +
-            `👤 ${user.first_name} ${user.last_name}\n` +
-            `🌐 Endi web saytda avtomatik kirib olasiz.`
-          );
 
         } catch (error) {
           console.error('Web login error:', error);
@@ -146,15 +165,51 @@ if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== "dummy_
       }
     }
 
-    // Regular start command
+    // Regular start command - auto register if needed
     let user = await storage.getUserByTelegramId(ctx.from?.id);
     
     if (!user) {
-      await ctx.reply(
-        `Salom! MetalBaza ga xush kelibsiz! 👋\n\n` +
-        `🏗️ Qurilish materiallari va jihozlari\n\n` +
-        `Ro'yxatdan o'tish uchun /register buyrug'ini ishlatib boshlang.`
-      );
+      // Auto-register new users
+      try {
+        const userData = {
+          phone: `+${ctx.from?.id}`,
+          first_name: ctx.from?.first_name || "Telegram",
+          last_name: ctx.from?.last_name || "User",
+          telegram_username: ctx.from?.username,
+          telegram_id: ctx.from?.id,
+          role: 'client' as const,
+          type: 'telegram' as const
+        };
+        
+        user = await storage.createUser(userData);
+        
+        await ctx.reply(
+          `Salom! MetalBaza ga xush kelibsiz! 👋\n\n` +
+          `🏗️ Qurilish materiallari va jihozlari\n\n` +
+          `✅ Avtomatik ro'yxatdan o'tdingiz!\n` +
+          `👤 ${user.first_name} ${user.last_name}\n\n` +
+          `Web saytni ochish uchun pastdagi tugmani bosing.`,
+          {
+            reply_markup: {
+              inline_keyboard: [[
+                { 
+                  text: "🛒 Web saytni ochish", 
+                  web_app: { 
+                    url: process.env.WEB_APP_URL || "https://metalbaza.uz" 
+                  }
+                }
+              ]]
+            }
+          }
+        );
+      } catch (error) {
+        console.error('Auto-registration error:', error);
+        await ctx.reply(
+          `Salom! MetalBaza ga xush kelibsiz! 👋\n\n` +
+          `🏗️ Qurilish materiallari va jihozlari\n\n` +
+          `Ro'yxatdan o'tish uchun /register buyrug'ini ishlatib boshlang.`
+        );
+      }
     } else {
       await ctx.reply(
         `Salom ${user.first_name}! 👋\n\n` +
@@ -176,22 +231,10 @@ if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== "dummy_
     }
   });
 
-  bot.command("register", async (ctx) => {
-    const existingUser = await storage.getUserByTelegramId(ctx.from?.id);
-    
-    if (existingUser) {
-      await ctx.reply("Siz allaqachon ro'yxatdan o'tgansiz! ✅");
-      return;
-    }
-    
-    await ctx.conversation.enter("registration");
-  });
-
   bot.command("help", async (ctx) => {
     await ctx.reply(
       "MetalBaza Bot Yordam 📋\n\n" +
       "/start - Botni ishga tushirish\n" +
-      "/register - Ro'yxatdan o'tish\n" +
       "/profile - Profil ma'lumotlari\n" +
       "/help - Yordam"
     );

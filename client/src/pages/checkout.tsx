@@ -296,23 +296,40 @@ export default function Checkout() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="fullName">Ism va familiya</Label>
+            <Label htmlFor="firstName">Ism</Label>
             <Input
-              id="fullName"
-              value={`${user?.first_name} ${user?.last_name}`}
-              readOnly
-              className="bg-gray-50"
+              id="firstName"
+              value={editableProfile.first_name}
+              onChange={(e) => setEditableProfile(prev => ({ ...prev, first_name: e.target.value }))}
+              placeholder="Ismingizni kiriting"
+            />
+          </div>
+          <div>
+            <Label htmlFor="lastName">Familiya</Label>
+            <Input
+              id="lastName"
+              value={editableProfile.last_name}
+              onChange={(e) => setEditableProfile(prev => ({ ...prev, last_name: e.target.value }))}
+              placeholder="Familiyangizni kiriting"
             />
           </div>
           <div>
             <Label htmlFor="phone">Telefon raqam</Label>
             <Input
               id="phone"
-              value={user?.phone || ''}
-              readOnly
-              className="bg-gray-50"
+              value={editableProfile.phone}
+              onChange={(e) => setEditableProfile(prev => ({ ...prev, phone: e.target.value }))}
+              placeholder="Telefon raqamingizni kiriting"
             />
           </div>
+          <Button
+            onClick={handleProfileUpdate}
+            disabled={updateProfileMutation.isPending}
+            variant="outline"
+            className="w-full"
+          >
+            {updateProfileMutation.isPending ? 'Saqlanmoqda...' : 'Ma\'lumotlarni saqlash'}
+          </Button>
         </CardContent>
       </Card>
 
@@ -340,7 +357,7 @@ export default function Checkout() {
               id="notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Buyurtma haqida qo'shimcha ma'lumot..."
+              placeholder="Masalan: 3-qavat, 15-xonadon, qo'ng'iroq qiling"
             />
           </div>
         </CardContent>
@@ -367,13 +384,15 @@ export default function Checkout() {
       </Card>
 
       {/* Place Order Button */}
-      <Button
+      <div className="pb-24 md:pb-0">
+        <Button
         onClick={handlePlaceOrder}
         disabled={placeOrderMutation.isPending}
         className="w-full bg-black text-white hover:bg-gray-800 py-3 text-lg font-semibold"
       >
         {placeOrderMutation.isPending ? 'Yuklanmoqda...' : 'Buyurtma berish'}
       </Button>
+      </div>
     </div>
   );
 }

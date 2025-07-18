@@ -30,7 +30,7 @@ export function BottomSheet({ isOpen, onClose, title, children, className }: Bot
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center md:items-center">
       {/* Backdrop */}
       <div 
         className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
@@ -40,14 +40,16 @@ export function BottomSheet({ isOpen, onClose, title, children, className }: Bot
       {/* Sheet */}
       <div 
         className={cn(
-          "relative w-full max-w-md bg-white rounded-t-3xl p-6 transform transition-transform duration-300 ease-out",
-          "animate-in slide-in-from-bottom shadow-2xl max-h-[95vh] overflow-y-auto",
+          "relative w-full bg-white transform transition-transform duration-300 ease-out shadow-2xl overflow-y-auto",
+          "md:max-w-4xl md:max-h-[90vh] md:rounded-2xl",
+          "max-w-md rounded-t-3xl p-6 max-h-[95vh]",
+          "animate-in slide-in-from-bottom md:animate-in md:fade-in-0 md:zoom-in-95",
           className
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Handle */}
-        <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mb-6" />
+        <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mb-6 md:hidden" />
         
         {/* Header */}
         {title && (
