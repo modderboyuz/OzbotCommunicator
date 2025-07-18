@@ -7,6 +7,7 @@ import { Link, useLocation } from "wouter"
 import { CategoryNav } from "@/components/layout/category-nav"
 import { ProductGrid } from "@/components/product/product-grid"
 import { Building2, Wrench, Truck, Zap, Package } from "lucide-react"
+import type { Category } from "@/lib/database.types"
 
 const categoryIcons = {
   building: Building2,
@@ -15,32 +16,14 @@ const categoryIcons = {
   zap: Zap,
 }
 
-interface Category {
-  id: string
-  name_uz: string
-  icon: string
-}
-
-interface Product {
-  id: string
-  name_uz: string
-  description_uz: string
-  price: number
-  unit: string
-  image_url?: string
-  is_rental: boolean
-}
-
-interface Ad {
-  id: string
-  title_uz: string
-  description_uz: string
-  link_url?: string
-}
-
 function Categories() {
   const { data: categories, isLoading } = useQuery({
-    queryKey: ["/api/categories"],
+    queryKey: ["categories"],
+    queryFn: async () => {
+      const response = await fetch("/api/categories")
+      if (!response.ok) throw new Error("Failed to fetch categories")
+      return response.json()
+    },
   })
 
   if (isLoading) {
@@ -86,7 +69,12 @@ function Categories() {
 function AdBanner() {
   const [currentAdIndex, setCurrentAdIndex] = useState(0)
   const { data: ads } = useQuery({
-    queryKey: ["/api/ads"],
+    queryKey: ["ads"],
+    queryFn: async () => {
+      const response = await fetch("/api/ads")
+      if (!response.ok) throw new Error("Failed to fetch ads")
+      return response.json()
+    },
   })
 
   // Auto-rotate ads every 3 seconds
@@ -132,7 +120,7 @@ function AdBanner() {
         {/* Dots indicator */}
         {ads.length > 1 && (
           <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex space-x-1">
-            {ads.map((_: Ad, index: number) => (
+            {ads.map((_, index) => (
               <div
                 key={index}
                 className={`w-2 h-2 rounded-full transition-colors ${
@@ -172,8 +160,8 @@ export default function Home() {
       <CategoryNav selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <AdBanner />
         <Categories />
+        <AdBanner />
 
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
