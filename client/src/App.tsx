@@ -36,14 +36,13 @@ function Router() {
       <Navigation />
       <main className="pb-20 md:pb-0">
         <Switch>
-          <Route path="/" component={user?.role === 'admin' ? AdminHome : Home} />
-          <Route path="/catalog" component={user?.role === 'admin' ? AdminHome : Catalog} />
-          <Route path="/workers" component={user?.role === 'admin' ? AdminHome : Workers} />
-          <Route path="/orders" component={user?.role === 'admin' ? AdminHome : Orders} />
+          <Route path="/" component={Home} />
+          <Route path="/catalog" component={Catalog} />
+          <Route path="/workers" component={Workers} />
+          <Route path="/orders" component={Orders} />
           <Route path="/worker-applications" component={user?.role === 'worker' ? WorkerApplications : NotFound} />
-          <Route path="/profile" component={user?.role === 'admin' ? AdminHome : Profile} />
-          <Route path="/checkout" component={user?.role === 'admin' ? AdminHome : Checkout} />
-          <Route path="/admin" component={Admin} />
+          <Route path="/profile" component={Profile} />
+          <Route path="/checkout" component={Checkout} />
           <Route component={NotFound} />
         </Switch>
       </main>
