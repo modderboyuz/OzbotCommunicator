@@ -1,82 +1,138 @@
 "use client"
 
-import * as React from "react"
+import type React from "react"
+
 import { useState } from "react"
+import { Search, User, ShoppingCart, Menu, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { User, Package, LogOut, Home, Grid3X3, ClipboardList, Phone, Search } from "lucide-react"
-import { useAuth } from "@/hooks/use-auth"
+import { Badge } from "@/components/ui/badge"
+import { useAuthStore } from "@/lib/auth-store"
 
-const navigationItems = [
-  { name: "Bosh sahifa", href: "/", icon: Home },
-  { name: "Katalog", href: "/catalog", icon: Grid3X3 },
-  { name: "Buyurtmalar", href: "/orders", icon: ClipboardList },
-  { name: "Aloqa", href: "/contact", icon: Phone },
-]
+interface NavigationProps {
+  onSearch?: (query: string) => void
+  cartItemsCount?: number
+}
 
-export function Navigation() {
-  const { user, logout } = useAuth()
-  const [isOpen, setIsOpen] = useState(false)
+export function Navigation({ onSearch, cartItemsCount = 0 }: NavigationProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const { user, logout } = useAuthStore()
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
-    if (searchQuery.trim()) {
-      window.location.href = `/?search=${encodeURIComponent(searchQuery)}`
-    }
+    onSearch?.(searchQuery)
   }
 
-  React.useEffect(() => {
-    if (searchQuery.trim()) {
-      const timeoutId = setTimeout(() => {
-        window.location.href = `/?search=${encodeURIComponent(searchQuery)}`
-      }, 500)
-
-      return () => clearTimeout(timeoutId)
-    }
-  }, [searchQuery])
-
   return (
-    <header className="sticky top-0 z-50 bg-white border-b border-gray-200">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex justify-between items-center h-16">
+    <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container mx-auto px-4">
+        <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center space-x-2">
-            <Package className="h-6 w-6 text-black" />
-            <span className="text-lg font-bold text-black hidden md:block">MetalBaza</span>
+          <div className="flex items-center">
+            <a href="/" className="flex items-center space-x-2">
+              <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
+                <span className="text-primary-foreground font-bold text-sm">M</span>
+              </div>
+              <span className="font-bold text-xl">MetalBaza</span>
+            </a>
           </div>
 
-          {/* Search Bar */}
-          <div className="flex-1 max-w-md mx-4">
-            <form onSubmit={handleSearch} className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          {/* Desktop Search */}
+          <div className="hidden md:flex flex-1 max-w-md mx-8">
+            <form onSubmit={handleSearch} className="relative w-full">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                type="text"
-                placeholder="Qidirish..."
+                type="search"
+                placeholder="Mahsulotlarni qidirish..."
+                className="pl-10 w-full"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 bg-gray-100 border-none rounded-full h-9 text-sm placeholder:text-gray-500 focus:bg-white focus:ring-2 focus:ring-black/10 transition-all"
               />
             </form>
           </div>
 
-          {/* Right side actions */}
-          <div className="flex items-center space-x-2">
+          {/* Desktop Actions */}
+          <div className="hidden md:flex items-center space-x-4">
             {user ? (
-              <div className="flex items-center space-x-2">
-                <Button variant="ghost" size="sm">
+              <>
+                <Button variant="ghost" size="sm" className="relative">
+                  <ShoppingCart className="h-5 w-5" />
+                  {cartItemsCount > 0 && (
+                    <Badge className="absolute -right-2 -top-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center">
+                      {cartItemsCount}
+                    </Badge>
+                  )}
+                </Button>
+                <Button variant="ghost" size="sm" className="flex items-center space-x-2">
                   <User className="h-4 w-4" />
+                  <span>{user.first_name}</span>
                 </Button>
-                <Button variant="ghost" size="sm" onClick={logout}>
-                  <LogOut className="h-4 w-4" />
-                </Button>
-              </div>
+              </>
             ) : (
-              <Button size="sm">Kirish</Button>
+              <Button variant="default" size="sm">
+                <User className="h-4 w-4 mr-2" />
+                Kirish
+              </Button>
             )}
           </div>
+
+          {/* Mobile Menu Button */}
+          <div className="md:hidden">
+            <Button variant="ghost" size="sm" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+              {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
+          </div>
         </div>
+
+        {/* Mobile Search */}
+        <div className="md:hidden pb-4">
+          <form onSubmit={handleSearch} className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Mahsulotlarni qidirish..."
+              className="pl-10 w-full"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </form>
+        </div>
+
+        {/* Mobile Menu */}
+        {isMenuOpen && (
+          <div className="md:hidden border-t bg-background">
+            <div className="py-4 space-y-4">
+              {user ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <User className="h-4 w-4" />
+                      <span>{user.first_name}</span>
+                    </div>
+                    <Button variant="ghost" size="sm" className="relative">
+                      <ShoppingCart className="h-5 w-5" />
+                      {cartItemsCount > 0 && (
+                        <Badge className="absolute -right-2 -top-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center">
+                          {cartItemsCount}
+                        </Badge>
+                      )}
+                    </Button>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={logout} className="w-full bg-transparent">
+                    Chiqish
+                  </Button>
+                </>
+              ) : (
+                <Button variant="default" size="sm" className="w-full">
+                  <User className="h-4 w-4 mr-2" />
+                  Kirish
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
-    </header>
+    </nav>
   )
 }

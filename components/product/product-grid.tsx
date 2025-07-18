@@ -1,20 +1,23 @@
 "use client"
 
-import * as React from "react"
+import { useState, useEffect } from "react"
 import { ProductCard } from "./product-card"
 import { ProductDetailModal } from "./product-detail-modal"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Button } from "@/components/ui/button"
+import { supabase } from "@/lib/supabase"
+import { Package } from "lucide-react"
 
 interface Product {
   id: string
   name_uz: string
+  name_ru: string
   description_uz: string
-  price: string
+  description_ru: string
+  price: number
   unit: string
   image_url?: string
   category_id: string
-  is_rental?: boolean
+  is_rental: boolean
+  stock_quantity: number
 }
 
 interface ProductGridProps {
@@ -23,151 +26,84 @@ interface ProductGridProps {
 }
 
 export function ProductGrid({ categoryId, searchQuery }: ProductGridProps) {
-  const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null)
-  const [isModalOpen, setIsModalOpen] = React.useState(false)
-  const [products, setProducts] = React.useState<Product[]>([])
-  const [isLoading, setIsLoading] = React.useState(true)
+  const [products, setProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadProducts()
   }, [categoryId, searchQuery])
 
   const loadProducts = async () => {
-    setIsLoading(true)
     try {
-      // Simulate loading products
-      const mockProducts: Product[] = [
-        {
-          id: "1",
-          name_uz: "Armaturniy prutok 12mm",
-          description_uz: "Yuqori sifatli po'lat armatura",
-          price: "15000",
-          unit: "metr",
-          category_id: "1",
-        },
-        {
-          id: "2",
-          name_uz: "Sement M400",
-          description_uz: "Qurilish uchun sement",
-          price: "45000",
-          unit: "qop",
-          category_id: "1",
-        },
-        {
-          id: "3",
-          name_uz: "Metalloprokat truba",
-          description_uz: "Galvanizlangan truba",
-          price: "25000",
-          unit: "metr",
-          category_id: "2",
-        },
-      ]
-
-      let filteredProducts = mockProducts
+      setLoading(true)
+      let query = supabase.from("products").select("*").eq("is_available", true)
 
       if (categoryId) {
-        filteredProducts = filteredProducts.filter((p) => p.category_id === categoryId)
+        query = query.eq("category_id", categoryId)
       }
 
       if (searchQuery) {
-        filteredProducts = filteredProducts.filter(
-          (p) =>
-            p.name_uz.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            p.description_uz.toLowerCase().includes(searchQuery.toLowerCase()),
+        query = query.or(
+          `name_uz.ilike.%${searchQuery}%,name_ru.ilike.%${searchQuery}%,description_uz.ilike.%${searchQuery}%`,
         )
       }
 
-      setProducts(filteredProducts)
+      const { data, error } = await query.order("created_at", { ascending: false })
+
+      if (error) throw error
+      setProducts(data || [])
     } catch (error) {
       console.error("Error loading products:", error)
     } finally {
-      setIsLoading(false)
+      setLoading(false)
     }
   }
 
-  const handleAddToCart = (productId: string, quantity = 1) => {
-    console.log("Add to cart:", productId, quantity)
-  }
-
-  const handleProductClick = (product: Product) => {
-    setSelectedProduct(product)
-    setIsModalOpen(true)
-  }
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false)
-    setSelectedProduct(null)
-  }
-
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        {Array.from({ length: 10 }).map((_, i) => (
-          <div key={i} className="space-y-3">
-            <Skeleton className="aspect-square rounded-xl" />
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-3 w-2/3" />
-              <div className="flex justify-between items-center">
-                <Skeleton className="h-5 w-16" />
-                <Skeleton className="h-8 w-12" />
-              </div>
-            </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {[...Array(8)].map((_, i) => (
+          <div key={i} className="bg-card rounded-lg border p-4 animate-pulse">
+            <div className="aspect-square bg-muted rounded-lg mb-4" />
+            <div className="h-4 bg-muted rounded mb-2" />
+            <div className="h-3 bg-muted rounded mb-4 w-3/4" />
+            <div className="h-8 bg-muted rounded" />
           </div>
         ))}
       </div>
     )
   }
 
-  if (!products || products.length === 0) {
+  if (products.length === 0) {
     return (
       <div className="text-center py-12">
-        <div className="text-gray-500 mb-4">
-          <svg className="mx-auto h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
-            />
-          </svg>
-        </div>
-        <h3 className="text-lg font-medium text-gray-900 mb-2">Mahsulotlar topilmadi</h3>
-        <p className="text-gray-600">
-          {searchQuery ? "Qidiruv bo'yicha natija yo'q" : "Ushbu kategoriyada mahsulotlar yo'q"}
+        <Package className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+        <h3 className="text-lg font-medium mb-2">Mahsulotlar topilmadi</h3>
+        <p className="text-muted-foreground">
+          {searchQuery
+            ? `"${searchQuery}" so'rovi bo'yicha natija topilmadi`
+            : "Bu kategoriyada hozircha mahsulotlar yo'q"}
         </p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-8">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+    <>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {products.map((product) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            onAddToCart={(productId) => handleAddToCart(productId, 1)}
-            onProductClick={handleProductClick}
-          />
+          <ProductCard key={product.id} product={product} onViewDetails={() => setSelectedProduct(product)} />
         ))}
       </div>
 
-      {products.length >= 20 && (
-        <div className="text-center">
-          <Button variant="outline" size="lg" className="px-8 py-3 rounded-xl bg-transparent">
-            Ko'proq mahsulotlar
-          </Button>
-        </div>
+      {selectedProduct && (
+        <ProductDetailModal
+          product={selectedProduct}
+          isOpen={!!selectedProduct}
+          onClose={() => setSelectedProduct(null)}
+        />
       )}
-
-      <ProductDetailModal
-        product={selectedProduct}
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        onAddToCart={handleAddToCart}
-        onProductClick={handleProductClick}
-      />
-    </div>
+    </>
   )
 }
