@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "MetalBaza - Qurilish materiallari",
-  description: "Qurilish materiallari va ustalar xizmati",
+  description: "Qurilish materiallari va jihozlari onlayn do'koni",
     generator: 'v0.dev'
 }
 
