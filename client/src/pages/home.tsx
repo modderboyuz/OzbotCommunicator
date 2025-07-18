@@ -11,6 +11,17 @@ import { ProductGrid } from "@/components/product/product-grid";
 import { 
   Search,
   Building2, 
+      console.error('User not logged in');
+      return;
+    }
+    
+    import('@/lib/supabase.js').then(({ dbService }) => {
+      dbService.addToCart(userId, productId, quantity).then(() => {
+        import('@/lib/query-client.js').then(({ queryClient }) => {
+          queryClient.invalidateQueries({ queryKey: ['/api/cart'] });
+        });
+      }).catch(console.error);
+    });
   Wrench, 
   Truck, 
   Zap,

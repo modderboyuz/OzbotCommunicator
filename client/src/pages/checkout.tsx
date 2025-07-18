@@ -1,397 +1,344 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
-import { useAuth } from '@/hooks/use-auth';
-import { queryClient } from '@/lib/query-client.js';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import { useToast } from '@/hooks/use-toast';
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Link, useLocation } from "wouter";
+import { ProductDetailModal } from "@/components/product/product-detail-modal";
+import { CategoryNav } from "@/components/layout/category-nav";
+import { ProductGrid } from "@/components/product/product-grid";
 import { 
-  MapPin, 
-  User, 
-  Phone, 
-  ShoppingCart,
-  Minus,
-  Plus,
-  Trash2,
-  ArrowLeft
-} from 'lucide-react';
-import type { CartItem, Product } from '@shared/schema';
-
-export default function Checkout() {
-  const [location, navigate] = useLocation();
-  const { user } = useAuth();
-  const { toast } = useToast();
-  
-  const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [notes, setNotes] = useState('');
-  const [editableProfile, setEditableProfile] = useState({
-    first_name: user?.first_name || '',
-    last_name: user?.last_name || '',
-    phone: user?.phone || ''
-  });
-
-  // Fetch cart items
-  const { data: cartItems, isLoading: cartLoading, refetch: refetchCart } = useQuery<(CartItem & { product: Product })[]>({
-    queryKey: ['/api/cart'],
-    enabled: !!user,
-    queryFn: async () => {
-      const response = await fetch('/api/cart', {
-        headers: {
-          'x-telegram-id': user?.telegram_id?.toString() || '',
-        },
-      });
-      if (!response.ok) {
-        throw new Error('Savatni yuklashda xatolik');
-      }
-      return response.json();
-    },
-  });
-
-  // Update cart item quantity
-  const updateCartMutation = useMutation({
-    mutationFn: async ({ productId, quantity }: { productId: string; quantity: number }) => {
-      const response = await fetch(`/api/cart/${productId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-telegram-id': user?.telegram_id?.toString() || '',
-        },
-        body: JSON.stringify({ quantity }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Savat elementini yangilashda xatolik');
-      }
-      
-      return response.json();
-    },
-    onSuccess: () => {
-      refetchCart();
-    },
-  });
-
-  // Remove item from cart
-  const removeFromCartMutation = useMutation({
-    mutationFn: async (productId: string) => {
-      const response = await fetch(`/api/cart/${productId}`, {
-        method: 'DELETE',
-        headers: {
-          'x-telegram-id': user?.telegram_id?.toString() || '',
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error('Savatdan o\'chirishda xatolik');
-      }
-      
-      return response.json();
-    },
-    onSuccess: () => {
-      refetchCart();
-    },
-  });
-
-  // Update profile
-  const updateProfileMutation = useMutation({
-    mutationFn: async (profileData: typeof editableProfile) => {
-      const response = await fetch('/api/users/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-telegram-id': user?.telegram_id?.toString() || '',
-        },
-        body: JSON.stringify(profileData),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Profilni yangilashda xatolik');
-      }
-      
-      return response.json();
-    },
-  });
-
-  // Place order
-  const placeOrderMutation = useMutation({
-    mutationFn: async (orderData: any) => {
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-telegram-id': user?.telegram_id?.toString() || '',
-        },
-        body: JSON.stringify(orderData),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Buyurtma berishda xatolik');
-      }
-      
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/cart'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/orders'] });
-      toast({
-        title: "Buyurtma berish",
-        description: "Buyurtma muvaffaqiyatli berildi!",
-      });
-      navigate('/orders');
-    },
-  });
-
-  const formatPrice = (price: string) => {
-    return new Intl.NumberFormat('uz-UZ').format(Number(price)) + " so'm";
-  };
-
-  const getTotalAmount = () => {
-    if (!cartItems) return 0;
-    return cartItems.reduce((total, item) => {
-      return total + (Number(item.product.price) * item.quantity);
-    }, 0);
-  };
-
-  const handlePlaceOrder = () => {
-    if (!cartItems || cartItems.length === 0) {
-      toast({
-        title: "Xatolik",
-        description: "Savat bo'sh",
-        variant: "destructive",
-      });
+  Search,
+  Building2, 
+      console.error('User not logged in');
       return;
     }
+    
+    import('@/lib/supabase.js').then(({ dbService }) => {
+      dbService.addToCart(userId, productId, quantity).then(() => {
+        import('@/lib/query-client.js').then(({ queryClient }) => {
+          queryClient.invalidateQueries({ queryKey: ['/api/cart'] });
+        });
+      }).catch(console.error);
+    });
+  Wrench, 
+  Truck, 
+  Zap,
+  ShoppingCart,
+  Package
+} from "lucide-react";
+import type { Category, Product, Ad } from "@shared/schema";
 
-    const orderData = {
-      delivery_address: deliveryAddress,
-      notes: notes,
-      items: cartItems.map(item => ({
-        product_id: item.product_id,
-        quantity: item.quantity,
-        price_per_unit: Number(item.product.price)
-      }))
-    };
+const categoryIcons = {
+  building: Building2,
+  wrench: Wrench,
+  truck: Truck,
+  zap: Zap,
+};
 
-    placeOrderMutation.mutate(orderData);
-  };
+function Categories() {
+  const { data: categories, isLoading } = useQuery({
+    queryKey: ['/api/categories'],
+  });
 
-  const handleProfileUpdate = () => {
-    updateProfileMutation.mutate(editableProfile);
-  };
-
-  if (cartLoading) {
+  if (isLoading) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
-          <p>Yuklanmoqda...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!cartItems || cartItems.length === 0) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">
-          <ShoppingCart className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold mb-2">Savat bo'sh</h2>
-          <p className="text-gray-600 mb-4">Hozircha savatda mahsulotlar yo'q</p>
-          <Button onClick={() => navigate('/catalog')}>
-            Katalogga o'tish
-          </Button>
+      <div className="px-4 py-2 mb-6">
+        <div className="flex justify-center">
+          <div className="flex space-x-3 overflow-x-auto pb-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex-shrink-0">
+                <Skeleton className="w-16 h-16 rounded-full" />
+                <Skeleton className="w-12 h-3 mt-2 mx-auto" />
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-2xl">
-      <div className="flex items-center gap-4 mb-6">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate(-1)}
-          className="p-2"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <h1 className="text-2xl font-bold">Buyurtma berish</h1>
+    <div className="px-4 py-4 mb-6">
+      <div className="flex justify-center">
+        <div className="flex space-x-6 overflow-x-auto pb-2 scrollbar-hide">
+          {categories?.slice(0, 6).map((category: Category) => {
+            const IconComponent = categoryIcons[category.icon as keyof typeof categoryIcons] || Package;
+            return (
+              <Link key={category.id} href={`/catalog?category=${category.id}`}>
+                <div className="flex-shrink-0 flex flex-col items-center space-y-2 cursor-pointer group">
+                  <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center group-hover:bg-gray-200 transition-colors">
+                    <IconComponent className="w-5 h-5 text-gray-600" />
+                  </div>
+                  <span className="text-xs text-gray-700 text-center w-14 truncate">
+                    {category.name_uz}
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdBanner() {
+  const [currentAdIndex, setCurrentAdIndex] = React.useState(0);
+  const { data: ads } = useQuery({
+    queryKey: ['/api/ads'],
+  });
+
+  // Auto-rotate ads every 3 seconds
+  React.useEffect(() => {
+    if (ads && ads.length > 1) {
+      const interval = setInterval(() => {
+        setCurrentAdIndex(prev => (prev + 1) % ads.length);
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [ads]);
+  if (!ads || ads.length === 0) {
+    return null;
+  }
+
+  const ad = ads[currentAdIndex];
+
+  const handleAdClick = () => {
+    if (ad.link_url) {
+      window.open(ad.link_url, '_blank');
+    }
+  };
+
+  return (
+    <div className="px-4 mb-6">
+      <div 
+        className="w-full h-20 bg-gradient-to-r from-gray-900 to-gray-700 cursor-pointer overflow-hidden rounded-xl relative"
+        onClick={handleAdClick}
+      >
+        <div className="w-full h-full flex items-center justify-between p-4 text-white">
+          <div className="flex-1">
+            <h3 className="text-lg font-bold mb-1">{ad.title_uz}</h3>
+            <p className="text-sm text-gray-200">{ad.description_uz}</p>
+          </div>
+          <div className="ml-4">
+            <div className="bg-white text-gray-900 px-4 py-2 rounded-lg font-medium text-sm hover:bg-gray-100 transition-colors">
+              Ko'rish
+            </div>
+          </div>
+        </div>
+        
+        {/* Dots indicator */}
+        {ads.length > 1 && (
+          <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex space-x-1">
+            {ads.map((_, index) => (
+              <div
+                key={index}
+                className={`w-2 h-2 rounded-full transition-colors ${
+                  index === currentAdIndex ? 'bg-white' : 'bg-white/50'
+                }`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AllProducts() {
+  const [page, setPage] = React.useState(1);
+  const PRODUCTS_PER_PAGE = 30;
+  
+  const { data: products, isLoading } = useQuery({
+    queryKey: ['/api/products'],
+  });
+
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Shuffle products for mixed display
+  const shuffledProducts = React.useMemo(() => {
+    if (!products) return [];
+    return [...products].sort(() => Math.random() - 0.5);
+  }, [products]);
+
+  const displayedProducts = shuffledProducts.slice(0, page * PRODUCTS_PER_PAGE);
+  const hasMore = shuffledProducts.length > displayedProducts.length;
+  const handleProductClick = (product: Product) => {
+    setSelectedProduct(product);
+    setIsModalOpen(true);
+  };
+
+  const handleAddToCart = (productId: string, quantity: number) => {
+    // TODO: Implement add to cart functionality
+    console.log('Adding to cart:', { productId, quantity });
+  };
+
+  const loadMore = () => {
+    setPage(prev => prev + 1);
+  };
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Card key={i} className="overflow-hidden">
+            <div className="aspect-square bg-gray-200">
+              <Skeleton className="w-full h-full" />
+            </div>
+            <CardContent className="p-4">
+              <Skeleton className="h-4 w-3/4 mb-2" />
+              <Skeleton className="h-3 w-1/2 mb-3" />
+              <div className="flex justify-between items-center">
+                <Skeleton className="h-5 w-20" />
+                <Skeleton className="h-8 w-16" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (!shuffledProducts || shuffledProducts.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Package className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">
+          Mahsulotlar topilmadi
+        </h3>
+        <p className="text-gray-500">
+          Hozircha bu kategoriyada mahsulotlar yo'q.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        {displayedProducts.map((product: Product) => (
+          <Card 
+            key={product.id} 
+            className="group overflow-hidden hover:shadow-md transition-all duration-200 bg-white border border-gray-100 cursor-pointer"
+            onClick={() => handleProductClick(product)}
+          >
+            <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 relative overflow-hidden">
+              <img
+                src={product.image_url || "https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=400"}
+                alt={product.name_uz}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                onError={(e) => {
+                  e.currentTarget.src = "https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=400";
+                }}
+              />
+              {product.is_rental && (
+                <Badge className="absolute top-1 left-1 bg-black text-white text-xs px-1 py-0.5">
+                  Ijara
+                </Badge>
+              )}
+            </div>
+            
+            <CardContent className="p-3">
+              <h3 className="font-medium text-gray-900 mb-1 text-sm line-clamp-2 group-hover:text-black transition-colors">
+                {product.name_uz}
+              </h3>
+              
+              <p className="text-xs text-gray-600 mb-2 line-clamp-1">
+                {product.description_uz}
+              </p>
+              
+              <div className="flex flex-col space-y-2">
+                <div className="flex flex-col">
+                  <span className="font-bold text-sm text-gray-900">
+                    {Number(product.price).toLocaleString()}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    so'm/{product.unit}
+                  </span>
+                </div>
+                
+                <Button 
+                  size="sm" 
+                  className="bg-black hover:bg-gray-800 text-white w-full h-7 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleAddToCart(product.id, 1);
+                  }}
+                >
+                  <ShoppingCart className="h-3 w-3 mr-1" />
+                  Qo'shish
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      {/* Cart Items */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ShoppingCart className="h-5 w-5" />
-            Savat ({cartItems.length} mahsulot)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {cartItems.map((item) => (
-            <div key={item.id} className="flex items-center gap-4 p-4 border rounded-lg">
-              <img
-                src={item.product.image_url || "https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100"}
-                alt={item.product.name_uz}
-                className="w-16 h-16 object-cover rounded"
-              />
-              <div className="flex-1">
-                <h3 className="font-medium">{item.product.name_uz}</h3>
-                <p className="text-sm text-gray-600">{formatPrice(item.product.price)} / {item.product.unit}</p>
-                {item.product.is_rental && (
-                  <Badge variant="secondary" className="mt-1">Ijara</Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => updateCartMutation.mutate({ 
-                    productId: item.product_id, 
-                    quantity: Math.max(1, item.quantity - 1) 
-                  })}
-                  disabled={item.quantity <= 1 || updateCartMutation.isPending}
-                  className="w-8 h-8 p-0"
-                >
-                  <Minus className="h-3 w-3" />
-                </Button>
-                <span className="w-8 text-center font-medium">{item.quantity}</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => updateCartMutation.mutate({ 
-                    productId: item.product_id, 
-                    quantity: item.quantity + 1 
-                  })}
-                  disabled={updateCartMutation.isPending}
-                  className="w-8 h-8 p-0"
-                >
-                  <Plus className="h-3 w-3" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => removeFromCartMutation.mutate(item.product_id)}
-                  disabled={removeFromCartMutation.isPending}
-                  className="w-8 h-8 p-0 text-red-500 hover:text-red-700"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* User Information */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            Shaxsiy ma'lumotlar
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="firstName">Ism</Label>
-            <Input
-              id="firstName"
-              value={editableProfile.first_name}
-              onChange={(e) => setEditableProfile(prev => ({ ...prev, first_name: e.target.value }))}
-              placeholder="Ismingizni kiriting"
-            />
-          </div>
-          <div>
-            <Label htmlFor="lastName">Familiya</Label>
-            <Input
-              id="lastName"
-              value={editableProfile.last_name}
-              onChange={(e) => setEditableProfile(prev => ({ ...prev, last_name: e.target.value }))}
-              placeholder="Familiyangizni kiriting"
-            />
-          </div>
-          <div>
-            <Label htmlFor="phone">Telefon raqam</Label>
-            <Input
-              id="phone"
-              value={editableProfile.phone}
-              onChange={(e) => setEditableProfile(prev => ({ ...prev, phone: e.target.value }))}
-              placeholder="Telefon raqamingizni kiriting"
-            />
-          </div>
+      {hasMore && (
+        <div className="text-center mt-8">
           <Button
-            onClick={handleProfileUpdate}
-            disabled={updateProfileMutation.isPending}
+            onClick={loadMore}
             variant="outline"
-            className="w-full"
+            size="lg"
+            className="px-8 py-3 rounded-xl"
           >
-            {updateProfileMutation.isPending ? 'Saqlanmoqda...' : 'Ma\'lumotlarni saqlash'}
+            Yana boshqalar
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      )}
+      <ProductDetailModal
+        product={selectedProduct}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onAddToCart={handleAddToCart}
+      />
+    </>
+  );
+}
 
-      {/* Delivery Address */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MapPin className="h-5 w-5" />
-            Yetkazib berish manzili
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="address">Manzil</Label>
-            <Input
-              id="address"
-              value={deliveryAddress}
-              onChange={(e) => setDeliveryAddress(e.target.value)}
-              placeholder="Yetkazib berish manzilini kiriting..."
-            />
-          </div>
-          <div>
-            <Label htmlFor="notes">Qo'shimcha ma'lumot</Label>
-            <Input
-              id="notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Masalan: 3-qavat, 15-xonadon, qo'ng'iroq qiling"
-            />
-          </div>
-        </CardContent>
-      </Card>
+export default function Home() {
+  const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [location] = useLocation();
 
-      {/* Order Summary */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Buyurtma jami</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span>Mahsulotlar jami:</span>
-              <span>{formatPrice(getTotalAmount().toString())}</span>
-            </div>
-            <Separator />
-            <div className="flex justify-between font-bold text-lg">
-              <span>Jami:</span>
-              <span>{formatPrice(getTotalAmount().toString())}</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+  // Get search query from URL params
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const categoryParam = urlParams.get('category');
+    const searchParam = urlParams.get('search');
+    
+    if (categoryParam) {
+      setSelectedCategory(categoryParam);
+    }
+    
+    if (searchParam) {
+      setSearchQuery(searchParam);
+    }
+  }, [location]);
 
-      {/* Place Order Button */}
-      <div className="pb-24 md:pb-0">
-        <Button
-        onClick={handlePlaceOrder}
-        disabled={placeOrderMutation.isPending}
-        className="w-full bg-black text-white hover:bg-gray-800 py-3 text-lg font-semibold"
-      >
-        {placeOrderMutation.isPending ? 'Yuklanmoqda...' : 'Buyurtma berish'}
-      </Button>
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <CategoryNav 
+        selectedCategory={selectedCategory}
+        onCategoryChange={setSelectedCategory}
+      />
+      
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <AdBanner />
+        
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+            {searchQuery ? `"${searchQuery}" qidiruv natijalari` :
+             selectedCategory ? 'Katalog' : 'Barcha mahsulotlar'}
+          </h1>
+          <p className="text-gray-600">
+            Qurilish materiallari va jihozlari
+          </p>
+        </div>
+        
+        <ProductGrid categoryId={selectedCategory} searchQuery={searchQuery} />
       </div>
     </div>
   );
