@@ -1,11 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
-
-// Use environment variables or fallback to dummy values for development
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://dummy.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'dummy_key';
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
 export interface AuthUser {
   id: string;
   phone: string;
@@ -22,20 +14,21 @@ export interface AuthUser {
 export const authService = {
   async loginWithTelegram(telegramId: number): Promise<AuthUser | null> {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('telegram_id', telegramId)
-        .single();
+      const response = await fetch('/api/auth/telegram', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ telegram_id: telegramId }),
+      });
 
-      if (error || !data) {
-        console.error('Telegram login error:', error);
+      if (!response.ok) {
         return null;
       }
 
-      // Store the user session
+      const { user } = await response.json();
       localStorage.setItem('telegram_id', telegramId.toString());
-      return data as AuthUser;
+      return user as AuthUser;
     } catch (error) {
       console.error('Telegram login error:', error);
       return null;
@@ -49,42 +42,53 @@ export const authService = {
     return await this.loginWithTelegram(Number(telegramId));
   },
 
-  async signUpWithTelegram(userData: {
-    phone: string;
-    first_name: string;
-    last_name: string;
-    telegram_username?: string;
-    telegram_id?: number;
-    role?: 'client' | 'worker' | 'admin';
-  }): Promise<AuthUser | null> {
+  async startTelegramLogin(): Promise<{ bot_url: string; token: string; client_id: string } | null> {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .insert([{
-          ...userData,
-          role: userData.role || 'client',
-          type: 'telegram'
-        }])
-        .select()
-        .single();
+      const telegramId = localStorage.getItem('telegram_id');
+      if (!telegramId) {
+        // Generate a temporary ID for new users
+        const tempId = Date.now();
+        localStorage.setItem('temp_telegram_id', tempId.toString());
+      }
 
-      if (error) {
-        console.error('Sign up error:', error);
+      const response = await fetch(`/api/auth/telegram-login?telegram_id=${telegramId || Date.now()}`);
+      
+      if (!response.ok) {
         return null;
       }
 
-      if (userData.telegram_id) {
-        localStorage.setItem('telegram_id', userData.telegram_id.toString());
+      return await response.json();
+    } catch (error) {
+      console.error('Start Telegram login error:', error);
+      return null;
+    }
+  },
+
+  async verifyToken(token: string): Promise<AuthUser | null> {
+    try {
+      const response = await fetch('/api/auth/verify-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+      });
+
+      if (!response.ok) {
+        return null;
       }
 
-      return data as AuthUser;
+      const { user } = await response.json();
+      localStorage.setItem('telegram_id', user.telegram_id.toString());
+      return user as AuthUser;
     } catch (error) {
-      console.error('Sign up error:', error);
+      console.error('Token verification error:', error);
       return null;
     }
   },
 
   logout() {
     localStorage.removeItem('telegram_id');
+    localStorage.removeItem('temp_telegram_id');
   },
 };

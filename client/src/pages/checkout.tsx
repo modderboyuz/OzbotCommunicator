@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { 
   MapPin, 
@@ -18,23 +17,25 @@ import {
   Minus,
   Plus,
   Trash2,
-  ArrowLeft,
-  Navigation
+  ArrowLeft
 } from 'lucide-react';
-import type { CartItem, Product, CompanySettings } from '@shared/schema';
+import type { CartItem, Product } from '@shared/schema';
 
 export default function Checkout() {
   const [location, navigate] = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
   
-  const [deliveryAddress, setDeliveryAddress] = useState(user?.delivery_address || '');
-  const [isDelivery, setIsDelivery] = useState(false);
-  const [isLocationEnabled, setIsLocationEnabled] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [notes, setNotes] = useState('');
+  const [editableProfile, setEditableProfile] = useState({
+    first_name: user?.first_name || '',
+    last_name: user?.last_name || '',
+    phone: user?.phone || ''
+  });
 
   // Fetch cart items
-  const { data: cartItems, isLoading: cartLoading } = useQuery<(CartItem & { product: Product })[]>({
+  const { data: cartItems, isLoading: cartLoading, refetch: refetchCart } = useQuery<(CartItem & { product: Product })[]>({
     queryKey: ['/api/cart'],
     enabled: !!user,
     queryFn: async () => {
@@ -45,18 +46,6 @@ export default function Checkout() {
       });
       if (!response.ok) {
         throw new Error('Savatni yuklashda xatolik');
-      }
-      return response.json();
-    },
-  });
-
-  // Fetch company settings
-  const { data: companySettings } = useQuery<CompanySettings>({
-    queryKey: ['/api/company-settings'],
-    queryFn: async () => {
-      const response = await fetch('/api/company-settings');
-      if (!response.ok) {
-        throw new Error('Kompaniya sozlamalarini yuklashda xatolik');
       }
       return response.json();
     },
@@ -81,7 +70,7 @@ export default function Checkout() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/cart'] });
+      refetchCart();
     },
   });
 
@@ -102,7 +91,27 @@ export default function Checkout() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/cart'] });
+      refetchCart();
+    },
+  });
+
+  // Update profile
+  const updateProfileMutation = useMutation({
+    mutationFn: async (profileData: typeof editableProfile) => {
+      const response = await fetch('/api/users/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-id': user?.telegram_id?.toString() || '',
+        },
+        body: JSON.stringify(profileData),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Profilni yangilashda xatolik');
+      }
+      
+      return response.json();
     },
   });
 
@@ -146,46 +155,6 @@ export default function Checkout() {
     }, 0);
   };
 
-  const getTotalDeliveryAmount = () => {
-    if (!cartItems || !isDelivery) return 0;
-    return cartItems.reduce((total, item) => {
-      const deliveryPrice = Number(item.product.delivery_price) || 0;
-      const freeThreshold = Number(item.product.free_delivery_threshold) || 0;
-      const itemTotal = Number(item.product.price) * item.quantity;
-      
-      return total + (itemTotal >= freeThreshold ? 0 : deliveryPrice);
-    }, 0);
-  };
-
-  const handleLocationRequest = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCurrentLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          setIsLocationEnabled(true);
-          setDeliveryAddress('Men turgan joy');
-        },
-        (error) => {
-          console.error('Geolocation error:', error);
-          toast({
-            title: "Lokatsiya xatoligi",
-            description: "Lokatsiyani olishda xatolik yuz berdi",
-            variant: "destructive",
-          });
-        }
-      );
-    } else {
-      toast({
-        title: "Lokatsiya qo'llab-quvvatlanmaydi",
-        description: "Brauzer lokatsiyani qo'llab-quvvatlamaydi",
-        variant: "destructive",
-      });
-    }
-  };
-
   const handlePlaceOrder = () => {
     if (!cartItems || cartItems.length === 0) {
       toast({
@@ -196,26 +165,21 @@ export default function Checkout() {
       return;
     }
 
-    if (isDelivery && !deliveryAddress) {
-      toast({
-        title: "Xatolik",
-        description: "Yetkazib berish manzilini kiriting",
-        variant: "destructive",
-      });
-      return;
-    }
-
     const orderData = {
-      total_amount: getTotalAmount(),
-      delivery_amount: getTotalDeliveryAmount(),
-      is_delivery: isDelivery,
-      delivery_address: isDelivery ? deliveryAddress : null,
-      delivery_latitude: currentLocation?.lat || null,
-      delivery_longitude: currentLocation?.lng || null,
-      status: 'pending',
+      delivery_address: deliveryAddress,
+      notes: notes,
+      items: cartItems.map(item => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price_per_unit: Number(item.product.price)
+      }))
     };
 
     placeOrderMutation.mutate(orderData);
+  };
+
+  const handleProfileUpdate = () => {
+    updateProfileMutation.mutate(editableProfile);
   };
 
   if (cartLoading) {
@@ -352,61 +316,35 @@ export default function Checkout() {
         </CardContent>
       </Card>
 
-      {/* Delivery Options */}
-      {companySettings?.is_delivery && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MapPin className="h-5 w-5" />
-              Yetkazib berish
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="delivery"
-                checked={isDelivery}
-                onChange={(e) => setIsDelivery(e.target.checked)}
-                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <Label htmlFor="delivery">Yetkazib berish xizmati</Label>
-            </div>
-            
-            {isDelivery && (
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="address">Yetkazib berish manzili</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="address"
-                      value={deliveryAddress}
-                      onChange={(e) => setDeliveryAddress(e.target.value)}
-                      placeholder="Manzilni kiriting..."
-                      className="flex-1"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleLocationRequest}
-                      className="flex items-center gap-2"
-                    >
-                      <Navigation className="h-4 w-4" />
-                      Men turgan joy
-                    </Button>
-                  </div>
-                </div>
-                
-                {getTotalDeliveryAmount() > 0 && (
-                  <div className="text-sm text-gray-600">
-                    Yetkazib berish narxi: {formatPrice(getTotalDeliveryAmount().toString())}
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {/* Delivery Address */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MapPin className="h-5 w-5" />
+            Yetkazib berish manzili
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="address">Manzil</Label>
+            <Input
+              id="address"
+              value={deliveryAddress}
+              onChange={(e) => setDeliveryAddress(e.target.value)}
+              placeholder="Yetkazib berish manzilini kiriting..."
+            />
+          </div>
+          <div>
+            <Label htmlFor="notes">Qo'shimcha ma'lumot</Label>
+            <Input
+              id="notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Buyurtma haqida qo'shimcha ma'lumot..."
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Order Summary */}
       <Card className="mb-6">
@@ -419,16 +357,10 @@ export default function Checkout() {
               <span>Mahsulotlar jami:</span>
               <span>{formatPrice(getTotalAmount().toString())}</span>
             </div>
-            {isDelivery && getTotalDeliveryAmount() > 0 && (
-              <div className="flex justify-between">
-                <span>Yetkazib berish:</span>
-                <span>{formatPrice(getTotalDeliveryAmount().toString())}</span>
-              </div>
-            )}
             <Separator />
             <div className="flex justify-between font-bold text-lg">
               <span>Jami:</span>
-              <span>{formatPrice((getTotalAmount() + getTotalDeliveryAmount()).toString())}</span>
+              <span>{formatPrice(getTotalAmount().toString())}</span>
             </div>
           </div>
         </CardContent>

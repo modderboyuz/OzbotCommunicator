@@ -1,7 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
-import { insertOrderSchema, insertAdSchema, insertWorkerApplicationSchema, insertCategorySchema, insertProductSchema } from "@shared/schema";
+import { storage } from "./storage.js";
+import { insertOrderSchema, insertAdSchema, insertWorkerApplicationSchema, insertCategorySchema, insertProductSchema, insertUserSchema } from "../shared/schema.js";
+import crypto from "crypto";
 
 interface AuthRequest extends Request {
   telegramId?: string;
@@ -10,12 +11,11 @@ interface AuthRequest extends Request {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Telegram webhook setup
-  if (process.env.TELEGRAM_BOT_TOKEN) {
+  if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_TOKEN !== "dummy_token") {
     try {
       const { telegramRouter, setWebhook } = await import("./telegram-webhook.js");
       app.use(telegramRouter);
       
-      // Set webhook after server starts
       setTimeout(async () => {
         try {
           await setWebhook();
@@ -30,23 +30,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   // Authentication middleware
-  const requireAuth = (req: AuthRequest, res: Response, next: any) => {
+  const requireAuth = async (req: AuthRequest, res: Response, next: any) => {
     const telegramId = req.headers['x-telegram-id'];
     if (!telegramId) {
       return res.status(401).json({ error: "Avtorizatsiya talab qilinadi" });
     }
-    req.telegramId = telegramId as string;
-    next();
-  };
-
-  const requireAdmin = async (req: AuthRequest, res: Response, next: any) => {
-    const user = await storage.getUserByTelegramId(Number(req.telegramId));
-    if (!user || user.role !== 'admin') {
-      return res.status(403).json({ error: "Admin huquqlari talab qilinadi" });
+    
+    const user = await storage.getUserByTelegramId(Number(telegramId));
+    if (!user) {
+      return res.status(401).json({ error: "Foydalanuvchi topilmadi" });
     }
+    
+    req.telegramId = telegramId as string;
     req.user = user;
     next();
   };
+
+  // Telegram login flow
+  app.get("/api/auth/telegram-login", async (req, res) => {
+    try {
+      const { telegram_id } = req.query;
+      
+      if (!telegram_id) {
+        return res.status(400).json({ error: "Telegram ID talab qilinadi" });
+      }
+
+      // Generate temp token
+      const token = crypto.randomBytes(32).toString('hex');
+      const clientId = crypto.randomBytes(16).toString('hex');
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+      await storage.createTempToken({
+        token,
+        telegram_id: Number(telegram_id),
+        client_id: clientId,
+        expires_at: expiresAt
+      });
+
+      const botUrl = `https://t.me/jamolstroybot?start=login_web_${token}_${Date.now()}_${clientId}`;
+      
+      res.json({ 
+        bot_url: botUrl,
+        token,
+        client_id: clientId
+      });
+    } catch (error) {
+      console.error('Telegram login error:', error);
+      res.status(500).json({ error: "Server xatoligi" });
+    }
+  });
+
+  app.post("/api/auth/verify-token", async (req, res) => {
+    try {
+      const { token } = req.body;
+      
+      const tempToken = await storage.getTempToken(token);
+      if (!tempToken) {
+        return res.status(400).json({ error: "Yaroqsiz yoki muddati tugagan token" });
+      }
+
+      const user = await storage.getUserByTelegramId(tempToken.telegram_id);
+      if (!user) {
+        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+      }
+
+      // Mark token as used
+      await storage.useTempToken(token);
+
+      res.json({ user });
+    } catch (error) {
+      console.error('Token verification error:', error);
+      res.status(500).json({ error: "Server xatoligi" });
+    }
+  });
 
   // Auth routes
   app.post("/api/auth/telegram", async (req, res) => {
@@ -71,36 +127,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(categories);
     } catch (error) {
       res.status(500).json({ error: "Kategoriyalarni olishda xatolik" });
-    }
-  });
-
-  app.post("/api/categories", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const category = await storage.createCategory(req.body);
-      res.json(category);
-    } catch (error) {
-      res.status(400).json({ error: "Noto'g'ri ma'lumotlar" });
-    }
-  });
-
-  app.put("/api/categories/:id", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const categoryData = insertCategorySchema.partial().parse(req.body);
-      const category = await storage.updateCategory(id, categoryData);
-      res.json(category);
-    } catch (error) {
-      res.status(400).json({ error: "Kategoriyani yangilashda xatolik" });
-    }
-  });
-
-  app.delete("/api/categories/:id", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const { id } = req.params;
-      await storage.deleteCategory(id);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Kategoriyani o'chirishda xatolik" });
     }
   });
 
@@ -132,46 +158,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/products", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const productData = insertProductSchema.parse(req.body);
-      const product = await storage.createProduct(productData);
-      res.json(product);
-    } catch (error) {
-      res.status(400).json({ error: "Noto'g'ri ma'lumotlar" });
-    }
-  });
-
-  app.put("/api/products/:id", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const { id } = req.params;
-      const productData = insertProductSchema.partial().parse(req.body);
-      const product = await storage.updateProduct(id, productData);
-      res.json(product);
-    } catch (error) {
-      res.status(400).json({ error: "Mahsulotni yangilashda xatolik" });
-    }
-  });
-
-  app.delete("/api/products/:id", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const { id } = req.params;
-      await storage.deleteProduct(id);
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: "Mahsulotni o'chirishda xatolik" });
-    }
-  });
-
   // Orders
   app.get("/api/orders", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const user = await storage.getUserByTelegramId(Number(req.telegramId));
-      if (!user) {
-        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
-      }
-
-      const orders = await storage.getOrders(user.id);
+      const orders = await storage.getOrders(req.user.id);
       res.json(orders);
     } catch (error) {
       res.status(500).json({ error: "Buyurtmalarni olishda xatolik" });
@@ -180,18 +170,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/orders", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const user = await storage.getUserByTelegramId(Number(req.telegramId));
-      if (!user) {
-        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+      const { items, ...orderData } = req.body;
+      
+      if (!items || items.length === 0) {
+        return res.status(400).json({ error: "Buyurtmada mahsulotlar bo'lishi kerak" });
       }
 
-      const orderData = insertOrderSchema.parse({
-        ...req.body,
-        user_id: user.id,
-      });
-      const order = await storage.createOrder(orderData);
+      // Get cart items to create order
+      const cartItems = await storage.getCartItems(req.user.id);
+      if (cartItems.length === 0) {
+        return res.status(400).json({ error: "Savat bo'sh" });
+      }
+
+      // Prepare order items
+      const orderItems = cartItems.map(item => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price_per_unit: Number(item.product.price)
+      }));
+
+      // Create order with items
+      const order = await storage.createOrderWithItems({
+        user_id: req.user.id,
+        delivery_address: orderData.delivery_address,
+        notes: orderData.notes,
+        total_amount: "0" // Will be calculated in createOrderWithItems
+      }, orderItems);
+
+      // Clear cart after successful order
+      await storage.clearCart(req.user.id);
+
       res.json(order);
     } catch (error) {
+      console.error('Order creation error:', error);
       res.status(400).json({ error: "Buyurtma berishda xatolik" });
     }
   });
@@ -206,79 +217,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/ads", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const adData = insertAdSchema.parse(req.body);
-      const ad = await storage.createAd(adData);
-      res.json(ad);
-    } catch (error) {
-      res.status(400).json({ error: "Reklama yaratishda xatolik" });
-    }
-  });
-
   // Workers
   app.get("/api/workers", async (req: AuthRequest, res: Response) => {
     try {
       const { search } = req.query;
       const workers = await storage.getWorkers(search as string);
       
-      // Check if user is admin to show sensitive data
-      let isAdmin = false;
-      if (req.telegramId) {
-        const user = await storage.getUserByTelegramId(Number(req.telegramId));
-        isAdmin = user?.role === 'admin';
-      }
-      
-      // Filter sensitive data for non-admin users
-      const filteredWorkers = workers.map(worker => {
-        if (isAdmin) {
-          return worker; // Show all data for admin
-        } else {
-          // Hide sensitive data for non-admin users
+      // Add average rating for each worker
+      const workersWithRating = await Promise.all(
+        workers.map(async (worker) => {
+          const avgRating = await storage.getWorkerAverageRating(worker.id);
+          const reviews = await storage.getWorkerReviews(worker.id);
           return {
-            id: worker.id,
-            first_name: worker.first_name,
-            last_name: worker.last_name,
-            telegram_username: worker.telegram_username,
-            role: worker.role,
-            specialization: worker.specialization,
-            experience_years: worker.experience_years,
-            hourly_rate: worker.hourly_rate,
-            created_at: worker.created_at
-            // Hide: phone, passport_series, passport_number, passport_issued_by, passport_issued_date, address
+            ...worker,
+            average_rating: avgRating,
+            review_count: reviews.length
           };
-        }
-      });
+        })
+      );
       
-      res.json(filteredWorkers);
+      res.json(workersWithRating);
     } catch (error) {
       console.error("Workers API error:", error);
       res.status(500).json({ error: "Ustalarni olishda xatolik" });
     }
   });
 
-  // Update user switched_to status for admin role switching
-  app.post("/api/users/:id/switch-role", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { switchedTo } = req.body;
-      
-      const updatedUser = await storage.updateUserSwitchedTo(id, switchedTo);
-      res.json(updatedUser);
-    } catch (error) {
-      console.error("Error switching user role:", error);
-      res.status(500).json({ error: "Rol almashtirishda xatolik" });
-    }
-  });
-
   // Cart routes
   app.get("/api/cart", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const user = await storage.getUserByTelegramId(Number(req.telegramId));
-      if (!user) {
-        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
-      }
-      const cartItems = await storage.getCartItems(user.id);
+      const cartItems = await storage.getCartItems(req.user.id);
       res.json(cartItems);
     } catch (error) {
       console.error("Error getting cart items:", error);
@@ -288,22 +256,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/cart", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      console.log("Adding to cart - telegram ID:", req.telegramId);
-      const user = await storage.getUserByTelegramId(Number(req.telegramId));
-      console.log("Found user:", user ? user.id : 'null');
-      
-      if (!user) {
-        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
-      }
-      
       const { productId, quantity } = req.body;
-      console.log("Cart data:", { productId, quantity });
       
       if (!productId || !quantity) {
         return res.status(400).json({ error: "Product ID va miqdor majburiy" });
       }
       
-      const cartItem = await storage.addToCart(user.id, productId, quantity);
+      const cartItem = await storage.addToCart(req.user.id, productId, quantity);
       res.json(cartItem);
     } catch (error) {
       console.error("Error adding to cart:", error);
@@ -313,11 +272,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/cart/:productId", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const user = await storage.getUserByTelegramId(Number(req.telegramId));
-      if (!user) {
-        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
-      }
-      
       const { productId } = req.params;
       const { quantity } = req.body;
       
@@ -325,7 +279,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Yaroqli miqdor kiriting" });
       }
       
-      const cartItem = await storage.updateCartItem(user.id, productId, quantity);
+      const cartItem = await storage.updateCartItem(req.user.id, productId, quantity);
       res.json(cartItem);
     } catch (error) {
       console.error("Error updating cart item:", error);
@@ -335,13 +289,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/cart/:productId", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const user = await storage.getUserByTelegramId(Number(req.telegramId));
-      if (!user) {
-        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
-      }
-      
       const { productId } = req.params;
-      await storage.removeFromCart(user.id, productId);
+      await storage.removeFromCart(req.user.id, productId);
       res.json({ success: true });
     } catch (error) {
       console.error("Error removing from cart:", error);
@@ -351,12 +300,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/cart", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const user = await storage.getUserByTelegramId(Number(req.telegramId));
-      if (!user) {
-        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
-      }
-      
-      await storage.clearCart(user.id);
+      await storage.clearCart(req.user.id);
       res.json({ success: true });
     } catch (error) {
       console.error("Error clearing cart:", error);
@@ -364,40 +308,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Company settings
-  app.get("/api/company-settings", async (req, res) => {
-    try {
-      const settings = await storage.getCompanySettings();
-      res.json(settings || { is_delivery: false });
-    } catch (error) {
-      console.error("Error getting company settings:", error);
-      res.status(500).json({ error: "Kompaniya sozlamalarini olishda xatolik" });
-    }
-  });
-
-  app.put("/api/company-settings", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const settings = await storage.updateCompanySettings(req.body);
-      res.json(settings);
-    } catch (error) {
-      console.error("Error updating company settings:", error);
-      res.status(500).json({ error: "Kompaniya sozlamalarini yangilashda xatolik" });
-    }
-  });
-
   // Worker Applications routes
   app.get("/api/worker-applications", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const user = await storage.getUserByTelegramId(Number(req.telegramId));
-      if (!user) {
-        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
-      }
-
-      if (user.role !== 'worker') {
+      if (req.user.role !== 'worker') {
         return res.status(403).json({ error: "Faqat ustalar uchun" });
       }
 
-      const applications = await storage.getWorkerApplications(user.id);
+      const applications = await storage.getWorkerApplications(req.user.id);
       res.json(applications);
     } catch (error) {
       console.error("Error getting worker applications:", error);
@@ -407,17 +325,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/worker-applications", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const user = await storage.getUserByTelegramId(Number(req.telegramId));
-      if (!user) {
-        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
-      }
-
-      const applicationData = insertWorkerApplicationSchema.parse({
-        ...req.body,
-        client_id: user.id,
+      const { worker_id, ...applicationData } = req.body;
+      
+      const application = await storage.createWorkerApplication({
+        ...applicationData,
+        client_id: req.user.id,
+        worker_id
       });
       
-      const application = await storage.createWorkerApplication(applicationData);
       res.json(application);
     } catch (error) {
       console.error("Error creating worker application:", error);
@@ -427,11 +342,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/worker-applications/:id", requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const user = await storage.getUserByTelegramId(Number(req.telegramId));
-      if (!user) {
-        return res.status(404).json({ error: "Foydalanuvchi topilmadi" });
-      }
-
       const { id } = req.params;
       const application = await storage.updateWorkerApplication(id, req.body);
       res.json(application);
@@ -441,14 +351,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin routes
-  app.get("/api/admin/users", requireAuth, requireAdmin, async (req, res) => {
+  // Worker Reviews routes
+  app.get("/api/worker-reviews/:workerId", async (req, res) => {
     try {
-      // This would need implementation for getting all users
-      res.json({ message: "Admin panel - foydalanuvchilar" });
+      const { workerId } = req.params;
+      const reviews = await storage.getWorkerReviews(workerId);
+      res.json(reviews);
     } catch (error) {
-      res.status(500).json({ error: "Admin ma'lumotlarini olishda xatolik" });
+      res.status(500).json({ error: "Sharhlarni olishda xatolik" });
     }
+  });
+
+  app.post("/api/worker-reviews", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const reviewData = {
+        ...req.body,
+        client_id: req.user.id
+      };
+      
+      const review = await storage.createWorkerReview(reviewData);
+      res.json(review);
+    } catch (error) {
+      console.error("Error creating review:", error);
+      res.status(400).json({ error: "Sharh yaratishda xatolik" });
+    }
+  });
+
+  // User profile update
+  app.put("/api/users/profile", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const { first_name, last_name, phone } = req.body;
+      
+      const updatedUser = await storage.updateUser(req.user.id, {
+        first_name,
+        last_name,
+        phone
+      });
+      
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      res.status(400).json({ error: "Profilni yangilashda xatolik" });
+    }
+  });
+
+  // Placeholder image endpoint
+  app.get("/api/placeholder/:width/:height", (req, res) => {
+    const { width, height } = req.params;
+    const imageUrl = `https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=${width}&h=${height}`;
+    res.redirect(imageUrl);
   });
 
   const httpServer = createServer(app);

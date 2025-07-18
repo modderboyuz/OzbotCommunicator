@@ -5,11 +5,13 @@ import {
   categories, 
   products, 
   orders, 
-  order_items, 
+  orderItems, 
   ads,
-  cart_items,
-  company_settings,
-  worker_applications,
+  cartItems,
+  workerApplications,
+  workerReviews,
+  tempTokens,
+  workTypes,
   type User, 
   type InsertUser, 
   type Category, 
@@ -23,73 +25,39 @@ import {
   type Ad, 
   type InsertAd,
   type CartItem,
-  type CompanySettings,
-  type InsertCompanySettings,
   type WorkerApplication,
   type InsertWorkerApplication,
-  insertCartItemSchema
+  type WorkerReview,
+  type InsertWorkerReview,
+  type TempToken,
+  type InsertTempToken,
+  type WorkType
 } from "../shared/schema.js";
 
-export interface IStorage {
-  // Users
-  getUser(id: string): Promise<User | undefined>;
-  getUserByTelegramId(telegramId: number | undefined): Promise<User | undefined>;
-  getUserByPhone(phone: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  updateUser(id: string, user: Partial<InsertUser>): Promise<User>;
-  updateUserSwitchedTo(id: string, switchedTo: 'client' | 'admin' | null): Promise<User>;
-  getWorkers(search?: string): Promise<User[]>;
-  
-  // Categories
-  getCategories(): Promise<Category[]>;
-  createCategory(category: InsertCategory): Promise<Category>;
-  updateCategory(id: string, category: Partial<InsertCategory>): Promise<Category>;
-  deleteCategory(id: string): Promise<void>;
-  
-  // Products
-  getProducts(categoryId?: string, search?: string): Promise<Product[]>;
-  getProduct(id: string): Promise<Product | undefined>;
-  createProduct(product: InsertProduct): Promise<Product>;
-  updateProduct(id: string, product: Partial<InsertProduct>): Promise<Product>;
-  deleteProduct(id: string): Promise<void>;
-  
-  // Orders
-  getOrders(userId?: string): Promise<Order[]>;
-  getOrder(id: string): Promise<Order | undefined>;
-  createOrder(order: InsertOrder): Promise<Order>;
-  updateOrder(id: string, order: Partial<InsertOrder>): Promise<Order>;
-  
-  // Order Items
-  getOrderItems(orderId: string): Promise<OrderItem[]>;
-  createOrderItem(orderItem: InsertOrderItem): Promise<OrderItem>;
-  
-  // Cart
-  getCartItems(userId: string): Promise<(CartItem & { product: Product })[]>;
-  addToCart(userId: string, productId: string, quantity: number): Promise<CartItem>;
-  updateCartItem(userId: string, productId: string, quantity: number): Promise<CartItem>;
-  removeFromCart(userId: string, productId: string): Promise<void>;
-  clearCart(userId: string): Promise<void>;
-  
-  // Ads
-  getActiveAds(): Promise<Ad[]>;
-  getAds(): Promise<Ad[]>;
-  createAd(ad: InsertAd): Promise<Ad>;
-  updateAd(id: string, ad: Partial<InsertAd>): Promise<Ad>;
-  deleteAd(id: string): Promise<void>;
-  
-  // Company Settings
-  getCompanySettings(): Promise<CompanySettings | undefined>;
-  updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings>;
-  
-  // Worker Applications
-  getWorkerApplications(workerId: string): Promise<WorkerApplication[]>;
-  getClientApplications(clientId: string): Promise<WorkerApplication[]>;
-  createWorkerApplication(application: InsertWorkerApplication): Promise<WorkerApplication>;
-  updateWorkerApplication(id: string, application: Partial<InsertWorkerApplication>): Promise<WorkerApplication>;
-  deleteWorkerApplication(id: string): Promise<void>;
-}
+export class DrizzleStorage {
+  // Temp tokens for Telegram login
+  async createTempToken(token: InsertTempToken): Promise<TempToken> {
+    const result = await db.insert(tempTokens).values(token).returning();
+    return result[0];
+  }
 
-export class DrizzleStorage implements IStorage {
+  async getTempToken(token: string): Promise<TempToken | undefined> {
+    const result = await db.select().from(tempTokens)
+      .where(and(
+        eq(tempTokens.token, token),
+        eq(tempTokens.used, false),
+        sql`${tempTokens.expires_at} > NOW()`
+      ))
+      .limit(1);
+    return result[0];
+  }
+
+  async useTempToken(token: string): Promise<void> {
+    await db.update(tempTokens)
+      .set({ used: true })
+      .where(eq(tempTokens.token, token));
+  }
+
   // Users
   async getUser(id: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
@@ -117,27 +85,21 @@ export class DrizzleStorage implements IStorage {
     return result[0];
   }
 
-  async updateUserSwitchedTo(id: string, switchedTo: 'client' | 'admin' | null): Promise<User> {
-    const result = await db.update(users).set({ switched_to: switchedTo }).where(eq(users.id, id)).returning();
-    return result[0];
-  }
-
   async getWorkers(search?: string): Promise<User[]> {
     try {
-      // Simple query first - just get all workers
-      const result = await db.select().from(users).where(eq(users.role, 'worker')).orderBy(desc(users.created_at));
+      let query = db.select().from(users).where(eq(users.role, 'worker'));
       
-      // Apply search filter in memory if needed
-      if (search && result.length > 0) {
-        const searchLower = search.toLowerCase();
-        return result.filter(user => 
-          user.first_name?.toLowerCase().includes(searchLower) ||
-          user.last_name?.toLowerCase().includes(searchLower) ||
-          user.telegram_username?.toLowerCase().includes(searchLower)
+      if (search) {
+        query = query.where(
+          or(
+            ilike(users.first_name, `%${search}%`),
+            ilike(users.last_name, `%${search}%`),
+            ilike(users.telegram_username, `%${search}%`)
+          )!
         );
       }
       
-      return result;
+      return await query.orderBy(desc(users.created_at));
     } catch (error) {
       console.error('Error getting workers:', error);
       return [];
@@ -239,26 +201,106 @@ export class DrizzleStorage implements IStorage {
 
   // Order Items
   async getOrderItems(orderId: string): Promise<OrderItem[]> {
-    return await db.select().from(order_items).where(eq(order_items.order_id, orderId));
+    return await db.select().from(orderItems).where(eq(orderItems.order_id, orderId));
   }
 
   async createOrderItem(orderItem: InsertOrderItem): Promise<OrderItem> {
-    const result = await db.insert(order_items).values(orderItem).returning();
+    const result = await db.insert(orderItems).values(orderItem).returning();
     return result[0];
+  }
+
+  async createOrderWithItems(orderData: InsertOrder, items: { product_id: string; quantity: number; price_per_unit: number }[]): Promise<Order> {
+    // Calculate total
+    const total = items.reduce((sum, item) => sum + (item.quantity * item.price_per_unit), 0);
+    
+    // Create order
+    const order = await this.createOrder({
+      ...orderData,
+      total_amount: total.toString()
+    });
+
+    // Create order items
+    for (const item of items) {
+      await this.createOrderItem({
+        order_id: order.id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price_per_unit: item.price_per_unit.toString(),
+        total_price: (item.quantity * item.price_per_unit).toString()
+      });
+    }
+
+    return order;
+  }
+
+  // Cart functionality
+  async getCartItems(userId: string): Promise<(CartItem & { product: Product })[]> {
+    const result = await db
+      .select({
+        id: cartItems.id,
+        user_id: cartItems.user_id,
+        product_id: cartItems.product_id,
+        quantity: cartItems.quantity,
+        created_at: cartItems.created_at,
+        product: products
+      })
+      .from(cartItems)
+      .innerJoin(products, eq(cartItems.product_id, products.id))
+      .where(eq(cartItems.user_id, userId))
+      .orderBy(desc(cartItems.created_at));
+    
+    return result;
+  }
+
+  async addToCart(userId: string, productId: string, quantity: number): Promise<CartItem> {
+    // Check if item already exists in cart
+    const existing = await db
+      .select()
+      .from(cartItems)
+      .where(and(eq(cartItems.user_id, userId), eq(cartItems.product_id, productId)))
+      .limit(1);
+
+    if (existing.length > 0) {
+      // Update existing item
+      const result = await db
+        .update(cartItems)
+        .set({ quantity: existing[0].quantity + quantity })
+        .where(eq(cartItems.id, existing[0].id))
+        .returning();
+      return result[0];
+    } else {
+      // Create new item
+      const result = await db
+        .insert(cartItems)
+        .values({ user_id: userId, product_id: productId, quantity })
+        .returning();
+      return result[0];
+    }
+  }
+
+  async updateCartItem(userId: string, productId: string, quantity: number): Promise<CartItem> {
+    const result = await db
+      .update(cartItems)
+      .set({ quantity })
+      .where(and(eq(cartItems.user_id, userId), eq(cartItems.product_id, productId)))
+      .returning();
+    return result[0];
+  }
+
+  async removeFromCart(userId: string, productId: string): Promise<void> {
+    await db
+      .delete(cartItems)
+      .where(and(eq(cartItems.user_id, userId), eq(cartItems.product_id, productId)));
+  }
+
+  async clearCart(userId: string): Promise<void> {
+    await db.delete(cartItems).where(eq(cartItems.user_id, userId));
   }
 
   // Ads
   async getActiveAds(): Promise<Ad[]> {
     return await db.select().from(ads)
-      .where(
-        and(
-          eq(ads.is_active, true),
-          or(
-            isNull(ads.start_date),
-            eq(ads.start_date, new Date())
-          )
-        )
-      )
+      .where(eq(ads.is_active, true))
       .orderBy(desc(ads.created_at));
   }
 
@@ -280,123 +322,60 @@ export class DrizzleStorage implements IStorage {
     await db.delete(ads).where(eq(ads.id, id));
   }
 
-  // Cart functionality
-  async getCartItems(userId: string): Promise<(CartItem & { product: Product })[]> {
-    const result = await db
-      .select({
-        id: cart_items.id,
-        user_id: cart_items.user_id,
-        product_id: cart_items.product_id,
-        quantity: cart_items.quantity,
-        created_at: cart_items.created_at,
-        product: products
-      })
-      .from(cart_items)
-      .innerJoin(products, eq(cart_items.product_id, products.id))
-      .where(eq(cart_items.user_id, userId))
-      .orderBy(desc(cart_items.created_at));
-    
-    return result;
-  }
-
-  async addToCart(userId: string, productId: string, quantity: number): Promise<CartItem> {
-    // Check if item already exists in cart
-    const existing = await db
-      .select()
-      .from(cart_items)
-      .where(and(eq(cart_items.user_id, userId), eq(cart_items.product_id, productId)))
-      .limit(1);
-
-    if (existing.length > 0) {
-      // Update existing item
-      const result = await db
-        .update(cart_items)
-        .set({ quantity: existing[0].quantity + quantity })
-        .where(eq(cart_items.id, existing[0].id))
-        .returning();
-      return result[0];
-    } else {
-      // Create new item
-      const result = await db
-        .insert(cart_items)
-        .values({ user_id: userId, product_id: productId, quantity })
-        .returning();
-      return result[0];
-    }
-  }
-
-  async updateCartItem(userId: string, productId: string, quantity: number): Promise<CartItem> {
-    const result = await db
-      .update(cart_items)
-      .set({ quantity })
-      .where(and(eq(cart_items.user_id, userId), eq(cart_items.product_id, productId)))
-      .returning();
-    return result[0];
-  }
-
-  async removeFromCart(userId: string, productId: string): Promise<void> {
-    await db
-      .delete(cart_items)
-      .where(and(eq(cart_items.user_id, userId), eq(cart_items.product_id, productId)));
-  }
-
-  async clearCart(userId: string): Promise<void> {
-    await db.delete(cart_items).where(eq(cart_items.user_id, userId));
-  }
-
-  // Company Settings
-  async getCompanySettings(): Promise<CompanySettings | undefined> {
-    const result = await db.select().from(company_settings).limit(1);
-    return result[0];
-  }
-
-  async updateCompanySettings(settings: Partial<InsertCompanySettings>): Promise<CompanySettings> {
-    const existing = await this.getCompanySettings();
-    if (existing) {
-      const result = await db.update(company_settings)
-        .set(settings)
-        .where(eq(company_settings.id, existing.id))
-        .returning();
-      return result[0];
-    } else {
-      const result = await db.insert(company_settings).values(settings).returning();
-      return result[0];
-    }
-  }
-
   // Worker Applications
   async getWorkerApplications(workerId: string): Promise<WorkerApplication[]> {
-    try {
-      return await db.select().from(worker_applications)
-        .where(eq(worker_applications.worker_id, workerId))
-        .orderBy(desc(worker_applications.created_at));
-    } catch (error) {
-      console.error('Error getting worker applications:', error);
-      return [];
-    }
+    return await db.select().from(workerApplications)
+      .where(eq(workerApplications.worker_id, workerId))
+      .orderBy(desc(workerApplications.created_at));
   }
 
   async getClientApplications(clientId: string): Promise<WorkerApplication[]> {
-    return await db.select().from(worker_applications)
-      .where(eq(worker_applications.client_id, clientId))
-      .orderBy(desc(worker_applications.created_at));
+    return await db.select().from(workerApplications)
+      .where(eq(workerApplications.client_id, clientId))
+      .orderBy(desc(workerApplications.created_at));
   }
 
   async createWorkerApplication(application: InsertWorkerApplication): Promise<WorkerApplication> {
-    const result = await db.insert(worker_applications).values(application).returning();
+    const result = await db.insert(workerApplications).values(application).returning();
     return result[0];
   }
 
   async updateWorkerApplication(id: string, application: Partial<InsertWorkerApplication>): Promise<WorkerApplication> {
-    const result = await db.update(worker_applications)
+    const result = await db.update(workerApplications)
       .set(application)
-      .where(eq(worker_applications.id, id))
+      .where(eq(workerApplications.id, id))
       .returning();
     return result[0];
   }
 
   async deleteWorkerApplication(id: string): Promise<void> {
-    await db.delete(worker_applications).where(eq(worker_applications.id, id));
+    await db.delete(workerApplications).where(eq(workerApplications.id, id));
+  }
+
+  // Worker Reviews
+  async getWorkerReviews(workerId: string): Promise<WorkerReview[]> {
+    return await db.select().from(workerReviews)
+      .where(eq(workerReviews.worker_id, workerId))
+      .orderBy(desc(workerReviews.created_at));
+  }
+
+  async createWorkerReview(review: InsertWorkerReview): Promise<WorkerReview> {
+    const result = await db.insert(workerReviews).values(review).returning();
+    return result[0];
+  }
+
+  async getWorkerAverageRating(workerId: string): Promise<number> {
+    const result = await db
+      .select({ avg: sql<number>`AVG(${workerReviews.rating})` })
+      .from(workerReviews)
+      .where(eq(workerReviews.worker_id, workerId));
+    
+    return result[0]?.avg || 0;
+  }
+
+  // Work Types
+  async getWorkTypes(): Promise<WorkType[]> {
+    return await db.select().from(workTypes).orderBy(workTypes.name_uz);
   }
 }
 
