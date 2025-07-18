@@ -11,7 +11,10 @@ app.use(cors())
 app.use(express.json())
 
 // Supabase client
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL || "https://your-project.supabase.co",
+  process.env.SUPABASE_SERVICE_ROLE_KEY || "your-service-role-key",
+)
 
 // API Routes
 app.get("/api/categories", async (req, res) => {
@@ -77,6 +80,74 @@ app.get("/api/ads", async (req, res) => {
   }
 })
 
+// Cart endpoints
+app.get("/api/cart/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params
+
+    const { data, error } = await supabase
+      .from("cart_items")
+      .select(`
+        *,
+        products (
+          id,
+          name_uz,
+          name_ru,
+          price,
+          image_url,
+          unit
+        )
+      `)
+      .eq("user_id", userId)
+
+    if (error) throw error
+    res.json(data)
+  } catch (error) {
+    console.error("Error fetching cart:", error)
+    res.status(500).json({ error: "Failed to fetch cart" })
+  }
+})
+
+app.post("/api/cart", async (req, res) => {
+  try {
+    const { user_id, product_id, quantity } = req.body
+
+    // Check if item already exists in cart
+    const { data: existingItem } = await supabase
+      .from("cart_items")
+      .select("*")
+      .eq("user_id", user_id)
+      .eq("product_id", product_id)
+      .single()
+
+    if (existingItem) {
+      // Update quantity
+      const { data, error } = await supabase
+        .from("cart_items")
+        .update({ quantity: existingItem.quantity + quantity })
+        .eq("id", existingItem.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      res.json(data)
+    } else {
+      // Add new item
+      const { data, error } = await supabase
+        .from("cart_items")
+        .insert([{ user_id, product_id, quantity }])
+        .select()
+        .single()
+
+      if (error) throw error
+      res.json(data)
+    }
+  } catch (error) {
+    console.error("Error adding to cart:", error)
+    res.status(500).json({ error: "Failed to add to cart" })
+  }
+})
+
 // Telegram webhook
 app.post("/api/telegram/webhook", async (req, res) => {
   try {
@@ -102,7 +173,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
         ])
 
         // Send login link
-        const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/telegram?token=${token}`
+        const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:5173"}/auth/telegram?token=${token}`
 
         await sendTelegramMessage(
           chatId,
@@ -183,25 +254,35 @@ app.post("/api/auth/telegram/verify", async (req, res) => {
 // Helper function to send Telegram messages
 async function sendTelegramMessage(chatId, text) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN
-  const url = `https://api.telegram.org/bot${botToken}/sendMessage`
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: text,
-      parse_mode: "HTML",
-    }),
-  })
-
-  if (!response.ok) {
-    throw new Error(`Telegram API error: ${response.statusText}`)
+  if (!botToken) {
+    console.error("TELEGRAM_BOT_TOKEN not set")
+    return
   }
 
-  return response.json()
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: "HTML",
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Telegram API error: ${response.statusText}`)
+    }
+
+    return response.json()
+  } catch (error) {
+    console.error("Error sending Telegram message:", error)
+  }
 }
 
 app.listen(PORT, () => {

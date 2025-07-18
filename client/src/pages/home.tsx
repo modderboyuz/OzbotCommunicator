@@ -2,12 +2,47 @@
 
 import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Link, useLocation } from "wouter"
+import { ProductDetailModal } from "@/components/product/product-detail-modal"
 import { CategoryNav } from "@/components/layout/category-nav"
 import { ProductGrid } from "@/components/product/product-grid"
-import { Building2, Wrench, Truck, Zap, Package } from "lucide-react"
-import type { Category } from "@/lib/database.types"
+import { Building2, Wrench, Truck, Zap, ShoppingCart, Package } from "lucide-react"
+
+interface Category {
+  id: string
+  name_uz: string
+  name_ru: string
+  icon: string
+  is_active: boolean
+}
+
+interface Product {
+  id: string
+  name_uz: string
+  name_ru: string
+  description_uz: string
+  description_ru: string
+  price: number
+  image_url: string
+  unit: string
+  is_rental: boolean
+  is_active: boolean
+  category_id: string
+}
+
+interface Ad {
+  id: string
+  title_uz: string
+  title_ru: string
+  description_uz: string
+  description_ru: string
+  link_url: string
+  is_active: boolean
+}
 
 const categoryIcons = {
   building: Building2,
@@ -18,7 +53,7 @@ const categoryIcons = {
 
 function Categories() {
   const { data: categories, isLoading } = useQuery({
-    queryKey: ["categories"],
+    queryKey: ["/api/categories"],
     queryFn: async () => {
       const response = await fetch("/api/categories")
       if (!response.ok) throw new Error("Failed to fetch categories")
@@ -69,7 +104,7 @@ function Categories() {
 function AdBanner() {
   const [currentAdIndex, setCurrentAdIndex] = useState(0)
   const { data: ads } = useQuery({
-    queryKey: ["ads"],
+    queryKey: ["/api/ads"],
     queryFn: async () => {
       const response = await fetch("/api/ads")
       if (!response.ok) throw new Error("Failed to fetch ads")
@@ -132,6 +167,176 @@ function AdBanner() {
         )}
       </div>
     </div>
+  )
+}
+
+function AllProducts() {
+  const [page, setPage] = useState(1)
+  const PRODUCTS_PER_PAGE = 30
+
+  const { data: products, isLoading } = useQuery({
+    queryKey: ["/api/products"],
+    queryFn: async () => {
+      const response = await fetch("/api/products")
+      if (!response.ok) throw new Error("Failed to fetch products")
+      return response.json()
+    },
+  })
+
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
+  // Shuffle products for mixed display
+  const shuffledProducts = useState(() => {
+    if (!products) return []
+    return [...products].sort(() => Math.random() - 0.5)
+  })[0]
+
+  const displayedProducts = shuffledProducts.slice(0, page * PRODUCTS_PER_PAGE)
+  const hasMore = shuffledProducts.length > displayedProducts.length
+
+  const handleProductClick = (product: Product) => {
+    setSelectedProduct(product)
+    setIsModalOpen(true)
+  }
+
+  const handleAddToCart = async (productId: string, quantity: number) => {
+    const userId = localStorage.getItem("userId")
+    if (!userId) {
+      console.error("User not logged in")
+      return
+    }
+
+    try {
+      const response = await fetch("/api/cart", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          product_id: productId,
+          quantity,
+        }),
+      })
+
+      if (!response.ok) throw new Error("Failed to add to cart")
+
+      // You can add a toast notification here
+      console.log("Added to cart successfully")
+    } catch (error) {
+      console.error("Error adding to cart:", error)
+    }
+  }
+
+  const loadMore = () => {
+    setPage((prev) => prev + 1)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Card key={i} className="overflow-hidden">
+            <div className="aspect-square bg-gray-200">
+              <Skeleton className="w-full h-full" />
+            </div>
+            <CardContent className="p-4">
+              <Skeleton className="h-4 w-3/4 mb-2" />
+              <Skeleton className="h-3 w-1/2 mb-3" />
+              <div className="flex justify-between items-center">
+                <Skeleton className="h-5 w-20" />
+                <Skeleton className="h-8 w-16" />
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
+
+  if (!shuffledProducts || shuffledProducts.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Package className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">Mahsulotlar topilmadi</h3>
+        <p className="text-gray-500">Hozircha bu kategoriyada mahsulotlar yo'q.</p>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        {displayedProducts.map((product: Product) => (
+          <Card
+            key={product.id}
+            className="group overflow-hidden hover:shadow-md transition-all duration-200 bg-white border border-gray-100 cursor-pointer"
+            onClick={() => handleProductClick(product)}
+          >
+            <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 relative overflow-hidden">
+              <img
+                src={
+                  product.image_url ||
+                  "https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=400"
+                }
+                alt={product.name_uz}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                onError={(e) => {
+                  e.currentTarget.src =
+                    "https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=400"
+                }}
+              />
+              {product.is_rental && (
+                <Badge className="absolute top-1 left-1 bg-black text-white text-xs px-1 py-0.5">Ijara</Badge>
+              )}
+            </div>
+
+            <CardContent className="p-3">
+              <h3 className="font-medium text-gray-900 mb-1 text-sm line-clamp-2 group-hover:text-black transition-colors">
+                {product.name_uz}
+              </h3>
+
+              <p className="text-xs text-gray-600 mb-2 line-clamp-1">{product.description_uz}</p>
+
+              <div className="flex flex-col space-y-2">
+                <div className="flex flex-col">
+                  <span className="font-bold text-sm text-gray-900">{Number(product.price).toLocaleString()}</span>
+                  <span className="text-xs text-gray-500">so'm/{product.unit}</span>
+                </div>
+
+                <Button
+                  size="sm"
+                  className="bg-black hover:bg-gray-800 text-white w-full h-7 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleAddToCart(product.id, 1)
+                  }}
+                >
+                  <ShoppingCart className="h-3 w-3 mr-1" />
+                  Qo'shish
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {hasMore && (
+        <div className="text-center mt-8">
+          <Button onClick={loadMore} variant="outline" size="lg" className="px-8 py-3 rounded-xl bg-transparent">
+            Yana boshqalar
+          </Button>
+        </div>
+      )}
+
+      <ProductDetailModal
+        product={selectedProduct}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onAddToCart={handleAddToCart}
+      />
+    </>
   )
 }
 
