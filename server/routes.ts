@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
+<<<<<<< HEAD
 import { storage } from "./supabase-storage";
 import { supabase } from "./db";
 import crypto from "crypto";
@@ -12,6 +13,10 @@ import {
   insertProductSchema,
   insertOrderItemSchema
 } from "@shared/schema";
+=======
+import { storage } from "./storage";
+import { insertOrderSchema, insertAdSchema, insertWorkerApplicationSchema } from "@shared/schema";
+>>>>>>> parent of d5f8a26 (Saved your changes before starting work)
 
 interface AuthRequest extends Request {
   telegramId?: string;
