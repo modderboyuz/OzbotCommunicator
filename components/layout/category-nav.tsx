@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils"
 interface Category {
   id: string
   name_uz: string
-  icon?: string
-  description_uz?: string
+  icon_name?: string
+  color?: string
 }
 
 interface CategoryNavProps {
@@ -40,12 +40,12 @@ export function CategoryNav({ selectedCategory, onCategoryChange }: CategoryNavP
       console.error("Error loading categories:", error)
       // Fallback to mock data
       const mockCategories: Category[] = [
-        { id: "1", name_uz: "Temir-beton", icon: "🏗️" },
-        { id: "2", name_uz: "Metalloprokat", icon: "🔧" },
-        { id: "3", name_uz: "Polimerlar", icon: "🧪" },
-        { id: "4", name_uz: "Asbest-sement", icon: "🏠" },
-        { id: "5", name_uz: "Jihozlar", icon: "⚙️" },
-        { id: "6", name_uz: "Arenda", icon: "📅" },
+        { id: "1", name_uz: "Temir-beton", icon_name: "🏗️", color: "#FF6B35" },
+        { id: "2", name_uz: "Metalloprokat", icon_name: "🔧", color: "#004E89" },
+        { id: "3", name_uz: "Polimerlar", icon_name: "🧪", color: "#009639" },
+        { id: "4", name_uz: "Asbest-sement", icon_name: "🏠", color: "#7209B7" },
+        { id: "5", name_uz: "Jihozlar", icon_name: "⚙️", color: "#F18F01" },
+        { id: "6", name_uz: "Arenda", icon_name: "📅", color: "#C73E1D" },
       ]
       setCategories(mockCategories)
     } finally {
@@ -107,9 +107,12 @@ export function CategoryNav({ selectedCategory, onCategoryChange }: CategoryNavP
                   "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200",
                   selectedCategory === category.id ? "bg-gray-900" : "bg-gray-100 group-hover:bg-gray-200",
                 )}
+                style={{
+                  backgroundColor: selectedCategory === category.id ? category.color || "#000" : undefined,
+                }}
               >
                 <span className={cn("text-lg", selectedCategory === category.id ? "text-white" : "text-gray-700")}>
-                  {category.icon || "📦"}
+                  {category.icon_name || "📦"}
                 </span>
               </div>
               <span className="text-xs font-medium text-center max-w-16 truncate">{category.name_uz}</span>

@@ -1,17 +1,11 @@
 import { createClient } from "@supabase/supabase-js"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://hliixatnpxjkhkyoswcw.supabase.co"
-const supabaseAnonKey =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhsaWl4YXRucHhqa2hreW9zd2N3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3MzAwOTYsImV4cCI6MjA2ODMwNjA5Nn0.cdtvakmd5huipmZ5vOkDOzcCkI1uUy8P83QHfJNg1y4"
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Server-side client for API routes
-export const createServerSupabaseClient = () => {
-  return createClient(supabaseUrl, supabaseAnonKey)
-}
-
+// Types
 export interface User {
   id: string
   telegram_id?: number
@@ -25,6 +19,19 @@ export interface User {
   updated_at: string
 }
 
+export interface Category {
+  id: string
+  name_uz: string
+  name_ru: string
+  icon_name?: string
+  color?: string
+  parent_id?: string
+  order_index: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface Product {
   id: string
   name_uz: string
@@ -33,24 +40,11 @@ export interface Product {
   description_ru?: string
   price: number
   image_url?: string
-  category_id?: string
+  category_id: string
   unit: string
   is_available: boolean
   type: "sale" | "rent"
   stock_quantity: number
-  created_at: string
-  updated_at: string
-}
-
-export interface Category {
-  id: string
-  name_uz: string
-  name_ru: string
-  icon_name?: string
-  color: string
-  parent_id?: string
-  order_index: number
-  is_active: boolean
   created_at: string
   updated_at: string
 }
@@ -76,7 +70,6 @@ export interface Order {
   notes?: string
   created_at: string
   updated_at: string
-  order_items?: OrderItem[]
 }
 
 export interface OrderItem {
@@ -105,6 +98,6 @@ export interface WorkerApplication {
   notes?: string
   created_at: string
   updated_at: string
-  client?: User
   worker?: User
+  client?: User
 }

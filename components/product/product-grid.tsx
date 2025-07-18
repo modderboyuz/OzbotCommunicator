@@ -15,6 +15,7 @@ interface Product {
   image_url?: string
   category_id: string
   is_rental?: boolean
+  type?: string
 }
 
 interface ProductGridProps {
@@ -82,6 +83,31 @@ export function ProductGrid({ categoryId, searchQuery }: ProductGridProps) {
           price: "25000",
           unit: "metr",
           category_id: "2",
+        },
+        {
+          id: "4",
+          name_uz: "Polietilen quvur",
+          description_uz: "Suv uchun polietilen quvur",
+          price: "12000",
+          unit: "metr",
+          category_id: "3",
+        },
+        {
+          id: "5",
+          name_uz: "Asbest plita",
+          description_uz: "Qurilish uchun asbest plita",
+          price: "35000",
+          unit: "dona",
+          category_id: "4",
+        },
+        {
+          id: "6",
+          name_uz: "Beton aralashtirgich",
+          description_uz: "Kichik beton aralashtirgich",
+          price: "150000",
+          unit: "dona",
+          category_id: "5",
+          is_rental: true,
         },
       ]
 

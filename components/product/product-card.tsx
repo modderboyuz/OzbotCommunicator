@@ -1,9 +1,10 @@
 "use client"
 
-import type * as React from "react"
+import { useState } from "react"
+import { Plus, Heart } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { useAuthStore } from "@/lib/auth-store"
+import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 
 interface Product {
   id: string
@@ -12,71 +13,88 @@ interface Product {
   price: string
   unit: string
   image_url?: string
+  category_id: string
   is_rental?: boolean
 }
 
 interface ProductCardProps {
   product: Product
-  onAddToCart?: (productId: string) => void
-  onProductClick?: (product: Product) => void
+  onAddToCart: (productId: string) => void
+  onProductClick: (product: Product) => void
 }
 
 export function ProductCard({ product, onAddToCart, onProductClick }: ProductCardProps) {
-  const { user } = useAuthStore()
-
-  const handleAddToCart = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!user) {
-      alert("Iltimos, avval tizimga kiring!")
-      return
-    }
-    onAddToCart?.(product.id)
-  }
-
-  const handleProductClick = () => {
-    onProductClick?.(product)
-  }
+  const [isLiked, setIsLiked] = useState(false)
+  const [imageError, setImageError] = useState(false)
 
   const formatPrice = (price: string) => {
-    return new Intl.NumberFormat("uz-UZ").format(Number(price)) + " so'm"
+    const numPrice = Number.parseFloat(price)
+    return new Intl.NumberFormat("uz-UZ").format(numPrice) + " so'm"
   }
 
-  const placeholderImage =
-    "https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=400"
+  const handleImageError = () => {
+    setImageError(true)
+  }
 
   return (
-    <Card
-      className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow duration-200 group cursor-pointer"
-      onClick={handleProductClick}
-    >
-      <div className="aspect-square bg-gray-100 relative overflow-hidden">
-        <img
-          src={product.image_url || placeholderImage}
-          alt={product.name_uz}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          onError={(e) => {
-            e.currentTarget.src = placeholderImage
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-200 group">
+      {/* Image */}
+      <div className="relative aspect-square bg-gray-100 cursor-pointer" onClick={() => onProductClick(product)}>
+        {!imageError && product.image_url ? (
+          <img
+            src={product.image_url || "/placeholder.svg"}
+            alt={product.name_uz}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+            onError={handleImageError}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gray-100">
+            <div className="text-4xl text-gray-400">📦</div>
+          </div>
+        )}
+
+        {/* Rental Badge */}
+        {product.is_rental && <Badge className="absolute top-2 left-2 bg-orange-500 text-white">Arenda</Badge>}
+
+        {/* Like Button */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn("absolute top-2 right-2 p-1 h-auto bg-white/80 hover:bg-white", isLiked && "text-red-500")}
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsLiked(!isLiked)
           }}
-        />
+        >
+          <Heart className={cn("h-4 w-4", isLiked && "fill-current")} />
+        </Button>
       </div>
 
-      <CardContent className="p-4">
-        <h3 className="font-semibold text-gray-900 text-sm mb-1 line-clamp-1">{product.name_uz}</h3>
-
-        <p className="text-xs text-gray-600 mb-2 line-clamp-2">{product.description_uz}</p>
+      {/* Content */}
+      <div className="p-3 space-y-2">
+        <div className="cursor-pointer" onClick={() => onProductClick(product)}>
+          <h3 className="font-medium text-sm text-gray-900 line-clamp-2 leading-tight">{product.name_uz}</h3>
+          <p className="text-xs text-gray-500 line-clamp-1 mt-1">{product.description_uz}</p>
+        </div>
 
         <div className="flex items-center justify-between">
-          <span className="text-lg font-bold text-gray-900">{formatPrice(product.price)}</span>
+          <div>
+            <span className="font-bold text-gray-900 text-sm">{formatPrice(product.price)}</span>
+            <span className="text-xs text-gray-500 ml-1">/{product.unit}</span>
+          </div>
 
           <Button
             size="sm"
-            onClick={handleAddToCart}
-            className="text-xs bg-black hover:bg-gray-800 text-white px-3 py-1 rounded-lg transition-colors"
+            onClick={(e) => {
+              e.stopPropagation()
+              onAddToCart(product.id)
+            }}
+            className="h-8 w-8 p-0 bg-gray-900 hover:bg-gray-800 rounded-lg"
           >
-            {product.is_rental ? "Buyurtma" : "Savat"}
+            <Plus className="h-4 w-4" />
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
