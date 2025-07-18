@@ -1,77 +1,149 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { createServerSupabaseClient } from "@/lib/supabase"
 
 export async function GET(request: NextRequest) {
   try {
-    const telegramId = request.headers.get("x-telegram-id")
-    if (!telegramId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get("userId")
+
+    if (!userId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
     }
 
-    // Get user by telegram ID
-    const { data: user } = await supabase.from("users").select("id").eq("telegram_id", Number(telegramId)).single()
+    const supabase = createServerSupabaseClient()
 
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
-    }
-
-    // Get cart items with product details
-    const { data, error } = await supabase
+    const { data: cartItems, error } = await supabase
       .from("cart_items")
       .select(`
         *,
-        products (*)
+        products (
+          id,
+          name_uz,
+          name_ru,
+          price,
+          image_url,
+          unit,
+          stock_quantity
+        )
       `)
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
 
     if (error) {
+      console.error("Cart fetch error:", error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json(data)
+    return NextResponse.json(cartItems || [])
   } catch (error) {
+    console.error("Cart API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const telegramId = request.headers.get("x-telegram-id")
-    if (!telegramId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const body = await request.json()
+    const { userId, productId, quantity } = body
+
+    if (!userId || !productId || !quantity) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    const { productId, quantity } = await request.json()
+    const supabase = createServerSupabaseClient()
 
-    // Get user by telegram ID
-    const { data: user } = await supabase.from("users").select("id").eq("telegram_id", Number(telegramId)).single()
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
-    }
-
-    // Add or update cart item
-    const { data, error } = await supabase
+    // Check if item already exists in cart
+    const { data: existingItem } = await supabase
       .from("cart_items")
-      .upsert(
-        {
-          user_id: user.id,
-          product_id: productId,
-          quantity: quantity,
-        },
-        {
-          onConflict: "user_id,product_id",
-        },
-      )
-      .select()
+      .select("*")
+      .eq("user_id", userId)
+      .eq("product_id", productId)
+      .single()
+
+    if (existingItem) {
+      // Update quantity
+      const { error } = await supabase
+        .from("cart_items")
+        .update({ quantity: existingItem.quantity + quantity })
+        .eq("id", existingItem.id)
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+    } else {
+      // Add new item
+      const { error } = await supabase.from("cart_items").insert({
+        user_id: userId,
+        product_id: productId,
+        quantity,
+      })
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Add to cart API error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { cartItemId, quantity } = body
+
+    if (!cartItemId || quantity === undefined) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    const supabase = createServerSupabaseClient()
+
+    if (quantity <= 0) {
+      // Remove item
+      const { error } = await supabase.from("cart_items").delete().eq("id", cartItemId)
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+    } else {
+      // Update quantity
+      const { error } = await supabase.from("cart_items").update({ quantity }).eq("id", cartItemId)
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Update cart API error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const cartItemId = searchParams.get("cartItemId")
+
+    if (!cartItemId) {
+      return NextResponse.json({ error: "Cart item ID is required" }, { status: 400 })
+    }
+
+    const supabase = createServerSupabaseClient()
+
+    const { error } = await supabase.from("cart_items").delete().eq("id", cartItemId)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json(data[0])
+    return NextResponse.json({ success: true })
   } catch (error) {
+    console.error("Remove from cart API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

@@ -1,145 +1,94 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    const telegram_id = request.headers.get("x-telegram-id")
     const { searchParams } = new URL(request.url)
-    const type = searchParams.get("type") // 'sent' or 'received'
+    const userId = searchParams.get("userId")
+    const userRole = searchParams.get("userRole")
 
-    if (!telegram_id) {
-      return NextResponse.json({ error: "Avtorizatsiya talab qilinadi" }, { status: 401 })
+    if (!userId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
     }
 
     const supabase = createServerSupabaseClient()
 
-    // Get user
-    const { data: user, error: userError } = await supabase
-      .from("users")
-      .select("*")
-      .eq("telegram_id", Number.parseInt(telegram_id))
-      .single()
-
-    if (userError || !user) {
-      return NextResponse.json({ error: "Foydalanuvchi topilmadi" }, { status: 404 })
-    }
-
-    let query = supabase
-      .from("worker_applications")
-      .select(`
+    let query = supabase.from("worker_applications").select(`
         *,
-        client:client_id (
+        worker:users!worker_applications_worker_id_fkey (
           id,
           first_name,
           last_name,
           phone,
-          username
+          profile_image
         ),
-        worker:worker_id (
+        client:users!worker_applications_client_id_fkey (
           id,
           first_name,
           last_name,
-          phone,
-          username
+          phone
         )
       `)
-      .order("created_at", { ascending: false })
 
-    if (type === "sent") {
-      // Applications sent by this user (client)
-      query = query.eq("client_id", user.id)
-    } else if (type === "received") {
-      // Applications received by this user (worker)
-      query = query.eq("worker_id", user.id)
+    // Filter based on user role
+    if (userRole === "worker") {
+      query = query.eq("worker_id", userId)
     } else {
-      // All applications for this user
-      query = query.or(`client_id.eq.${user.id},worker_id.eq.${user.id}`)
+      query = query.eq("client_id", userId)
     }
 
-    const { data: applications, error } = await query
+    const { data: applications, error } = await query.order("created_at", { ascending: false })
 
     if (error) {
       console.error("Worker applications fetch error:", error)
-      return NextResponse.json({ error: "Arizalarni olishda xatolik" }, { status: 500 })
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     return NextResponse.json(applications || [])
   } catch (error) {
     console.error("Worker applications API error:", error)
-    return NextResponse.json({ error: "Server xatoligi" }, { status: 500 })
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const telegram_id = request.headers.get("x-telegram-id")
-    const { worker_id, title, description, location, budget, urgency, contact_phone, preferred_date, notes } =
-      await request.json()
+    const body = await request.json()
+    const { workerId, clientId, title, description, location, budget, urgency, contactPhone, preferredDate, notes } =
+      body
 
-    if (!telegram_id) {
-      return NextResponse.json({ error: "Avtorizatsiya talab qilinadi" }, { status: 401 })
-    }
-
-    if (!worker_id || !title || !description) {
-      return NextResponse.json({ error: "Majburiy maydonlarni to'ldiring" }, { status: 400 })
+    if (!workerId || !clientId || !title || !description) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
     const supabase = createServerSupabaseClient()
 
-    // Get user (client)
-    const { data: user, error: userError } = await supabase
-      .from("users")
-      .select("id")
-      .eq("telegram_id", Number.parseInt(telegram_id))
-      .single()
-
-    if (userError || !user) {
-      return NextResponse.json({ error: "Foydalanuvchi topilmadi" }, { status: 404 })
-    }
-
-    // Create application
     const { data: application, error } = await supabase
       .from("worker_applications")
       .insert({
-        worker_id,
-        client_id: user.id,
+        worker_id: workerId,
+        client_id: clientId,
         title,
         description,
         location,
-        budget: budget ? Number.parseFloat(budget) : null,
+        budget,
         urgency: urgency || "medium",
-        contact_phone,
-        preferred_date,
+        contact_phone: contactPhone,
+        preferred_date: preferredDate,
         notes,
         status: "pending",
       })
-      .select(`
-        *,
-        client:client_id (
-          id,
-          first_name,
-          last_name,
-          phone,
-          username
-        ),
-        worker:worker_id (
-          id,
-          first_name,
-          last_name,
-          phone,
-          username
-        )
-      `)
+      .select()
       .single()
 
     if (error) {
       console.error("Worker application creation error:", error)
-      return NextResponse.json({ error: "Ariza yaratishda xatolik" }, { status: 500 })
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json(application)
+    return NextResponse.json({ success: true, applicationId: application.id })
   } catch (error) {
-    console.error("Worker applications POST error:", error)
-    return NextResponse.json({ error: "Server xatoligi" }, { status: 500 })
+    console.error("Worker application creation API error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
