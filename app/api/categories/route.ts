@@ -1,24 +1,18 @@
 import { NextResponse } from "next/server"
-import { createServerSupabaseClient } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase"
 
 export async function GET() {
   try {
-    const supabase = createServerSupabaseClient()
-
-    const { data: categories, error } = await supabase
-      .from("categories")
-      .select("*")
-      .eq("is_active", true)
-      .order("order_index", { ascending: true })
+    const { data, error } = await supabase.from("categories").select("*").eq("is_active", true).order("order_index")
 
     if (error) {
       console.error("Categories fetch error:", error)
-      return NextResponse.json({ error: "Kategoriyalarni olishda xatolik" }, { status: 500 })
+      return NextResponse.json({ error: "Failed to fetch categories" }, { status: 500 })
     }
 
-    return NextResponse.json(categories || [])
+    return NextResponse.json(data || [])
   } catch (error) {
     console.error("Categories API error:", error)
-    return NextResponse.json({ error: "Server xatoligi" }, { status: 500 })
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

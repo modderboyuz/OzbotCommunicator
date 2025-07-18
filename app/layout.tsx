@@ -2,13 +2,13 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import { Providers } from "./providers"
+import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "MetalBaza - Metall mahsulotlari va ustalar",
-  description: "Metall mahsulotlari va professional ustalar xizmatlari",
+  title: "MetalBaza - Qurilish materiallari",
+  description: "Qurilish materiallari va ustalar xizmati",
     generator: 'v0.dev'
 }
 
@@ -20,7 +20,8 @@ export default function RootLayout({
   return (
     <html lang="uz">
       <body className={inter.className}>
-        <Providers>{children}</Providers>
+        {children}
+        <Toaster />
       </body>
     </html>
   )
