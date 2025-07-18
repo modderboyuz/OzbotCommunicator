@@ -14,29 +14,31 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 })
 
 // Server-side Supabase client with cookies
-export const createServerSupabaseClient = async () => {
-  const cookieStore = await cookies()
+export function createServerSupabaseClient() {
+  const cookieStore = cookies()
 
   return createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: false,
     },
-    global: {
-      headers: {
-        Cookie: cookieStore.toString(),
+    cookies: {
+      get(name: string) {
+        return cookieStore.get(name)?.value
+      },
+      set(name: string, value: string, options: any) {
+        cookieStore.set({ name, value, ...options })
+      },
+      remove(name: string, options: any) {
+        cookieStore.set({ name, value: "", ...options })
       },
     },
   })
 }
 
-// Admin client for server operations
-export const createAdminSupabaseClient = () => {
-  return createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  })
-}
-
-export default supabase
+// Admin client for privileged operations
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+})

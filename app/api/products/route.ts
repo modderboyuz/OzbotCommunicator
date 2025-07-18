@@ -1,13 +1,12 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
+    const supabase = createServerSupabaseClient()
     const { searchParams } = new URL(request.url)
     const category = searchParams.get("category")
     const search = searchParams.get("search")
-
-    const supabase = await createServerSupabaseClient()
 
     let query = supabase
       .from("products")
@@ -32,7 +31,7 @@ export async function GET(request: Request) {
 
     if (error) {
       console.error("Products fetch error:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: "Failed to fetch products" }, { status: 500 })
     }
 
     return NextResponse.json(products || [])

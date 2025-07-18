@@ -1,16 +1,19 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get("userId")
+    const supabase = createServerSupabaseClient()
 
-    if (!userId) {
-      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+    // Get user from session
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-
-    const supabase = await createServerSupabaseClient()
 
     const { data: orders, error } = await supabase
       .from("orders")
@@ -19,19 +22,18 @@ export async function GET(request: Request) {
         order_items (
           *,
           products (
-            id,
             name,
             price,
             image_url
           )
         )
       `)
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false })
 
     if (error) {
       console.error("Orders fetch error:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: "Failed to fetch orders" }, { status: 500 })
     }
 
     return NextResponse.json(orders || [])
@@ -41,33 +43,39 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { userId, items, totalAmount, shippingAddress, paymentMethod } = body
+    const supabase = createServerSupabaseClient()
 
-    if (!userId || !items || !totalAmount) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    // Get user from session
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const supabase = await createServerSupabaseClient()
+    const body = await request.json()
+    const { items, total_amount, delivery_address, phone } = body
 
     // Create order
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert({
-        user_id: userId,
-        total_amount: totalAmount,
+        user_id: user.id,
+        total_amount,
+        delivery_address,
+        phone,
         status: "pending",
-        shipping_address: shippingAddress,
-        payment_method: paymentMethod,
       })
       .select()
       .single()
 
     if (orderError) {
       console.error("Order creation error:", orderError)
-      return NextResponse.json({ error: orderError.message }, { status: 500 })
+      return NextResponse.json({ error: "Failed to create order" }, { status: 500 })
     }
 
     // Create order items
@@ -82,12 +90,12 @@ export async function POST(request: Request) {
 
     if (itemsError) {
       console.error("Order items creation error:", itemsError)
-      return NextResponse.json({ error: itemsError.message }, { status: 500 })
+      return NextResponse.json({ error: "Failed to create order items" }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, orderId: order.id })
+    return NextResponse.json(order)
   } catch (error) {
-    console.error("Order creation API error:", error)
+    console.error("Orders POST API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

@@ -1,19 +1,22 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get("userId")
+    const supabase = createServerSupabaseClient()
 
-    if (!userId) {
-      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+    // Get user from session
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const supabase = await createServerSupabaseClient()
-
     const { data: cartItems, error } = await supabase
-      .from("cart_items")
+      .from("cart")
       .select(`
         *,
         products (
@@ -24,11 +27,11 @@ export async function GET(request: Request) {
           is_active
         )
       `)
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
 
     if (error) {
       console.error("Cart fetch error:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: "Failed to fetch cart" }, { status: 500 })
     }
 
     return NextResponse.json(cartItems || [])
@@ -38,87 +41,108 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { userId, productId, quantity } = body
+    const supabase = createServerSupabaseClient()
 
-    if (!userId || !productId || !quantity) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    // Get user from session
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const supabase = await createServerSupabaseClient()
+    const body = await request.json()
+    const { product_id, quantity } = body
 
     // Check if item already exists in cart
-    const { data: existingItem } = await supabase
-      .from("cart_items")
+    const { data: existingItem, error: checkError } = await supabase
+      .from("cart")
       .select("*")
-      .eq("user_id", userId)
-      .eq("product_id", productId)
+      .eq("user_id", user.id)
+      .eq("product_id", product_id)
       .single()
 
+    if (checkError && checkError.code !== "PGRST116") {
+      console.error("Cart check error:", checkError)
+      return NextResponse.json({ error: "Failed to check cart" }, { status: 500 })
+    }
+
+    let result
     if (existingItem) {
-      // Update quantity
-      const { data: updatedItem, error } = await supabase
-        .from("cart_items")
+      // Update existing item
+      const { data, error } = await supabase
+        .from("cart")
         .update({ quantity: existingItem.quantity + quantity })
         .eq("id", existingItem.id)
         .select()
         .single()
 
+      result = data
       if (error) {
         console.error("Cart update error:", error)
-        return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ error: "Failed to update cart" }, { status: 500 })
       }
-
-      return NextResponse.json(updatedItem)
     } else {
-      // Create new cart item
-      const { data: newItem, error } = await supabase
-        .from("cart_items")
+      // Create new item
+      const { data, error } = await supabase
+        .from("cart")
         .insert({
-          user_id: userId,
-          product_id: productId,
+          user_id: user.id,
+          product_id,
           quantity,
         })
         .select()
         .single()
 
+      result = data
       if (error) {
         console.error("Cart creation error:", error)
-        return NextResponse.json({ error: error.message }, { status: 500 })
+        return NextResponse.json({ error: "Failed to add to cart" }, { status: 500 })
       }
-
-      return NextResponse.json(newItem)
     }
+
+    return NextResponse.json(result)
   } catch (error) {
-    console.error("Cart API error:", error)
+    console.error("Cart POST API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userId = searchParams.get("userId")
-    const productId = searchParams.get("productId")
+    const supabase = createServerSupabaseClient()
 
-    if (!userId || !productId) {
-      return NextResponse.json({ error: "User ID and Product ID are required" }, { status: 400 })
+    // Get user from session
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const supabase = await createServerSupabaseClient()
+    const { searchParams } = new URL(request.url)
+    const itemId = searchParams.get("id")
 
-    const { error } = await supabase.from("cart_items").delete().eq("user_id", userId).eq("product_id", productId)
+    if (!itemId) {
+      return NextResponse.json({ error: "Item ID is required" }, { status: 400 })
+    }
+
+    const { error } = await supabase.from("cart").delete().eq("id", itemId).eq("user_id", user.id)
 
     if (error) {
-      console.error("Cart deletion error:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error("Cart delete error:", error)
+      return NextResponse.json({ error: "Failed to remove from cart" }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Cart deletion API error:", error)
+    console.error("Cart DELETE API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
